@@ -1,5 +1,11 @@
 """Tests for Nmap text-output parsing."""
 
+from types import SimpleNamespace
+
+import pytest
+
+from harness.guardrails.shell_guard import ShellResult
+from harness.scope import Engagement, ScopeGate
 from harness.tools.scan import _parse_nmap
 
 
@@ -40,3 +46,80 @@ Not shown: 1000 closed tcp ports (reset)
 """
 
     assert _parse_nmap(output) == [{"host": "192.0.2.11", "ports": []}]
+
+
+@pytest.mark.asyncio
+async def test_scan_preserves_nmap_stderr_diagnostics(packages, monkeypatch) -> None:
+    from harness.guardrails import shell_guard
+    from harness.tools.scan import handle_scan
+
+    class FakeGuard:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def check(self, command):
+            assert "-Pn" in command
+            return True, ""
+
+        async def execute_in_mode(self, *_args, **_kwargs):
+            return ShellResult(
+                rc=0,
+                stdout=b"Nmap scan report for 192.0.2.10\n80/tcp open http\n",
+                stderr=b"Strange read error from 192.0.2.10 (22 - 'Invalid argument')\n",
+                truncated=False,
+            )
+
+    monkeypatch.setattr(shell_guard, "ShellGuard", FakeGuard)
+    engagement = Engagement("eng", "lab", "192.0.2.0/24", "defensive")
+    ctx = SimpleNamespace(
+        gate=ScopeGate([engagement], packages, {}),
+        config=SimpleNamespace(
+            packages=packages,
+            shell=SimpleNamespace(workdir="."),
+            process=SimpleNamespace(container_runtime="podman",
+                                    container_image="image"),
+        ),
+        extra={},
+    )
+
+    result = await handle_scan(ctx, ["192.0.2.10"], "eng", reason="test")
+
+    assert result["hosts"][0]["ports"][0]["port"] == "80"
+    assert "Strange read error" in result["stderr"]
+    assert result["partial"] is True
+
+
+@pytest.mark.asyncio
+async def test_scan_returns_nonzero_nmap_exit_as_failure(packages, monkeypatch) -> None:
+    from harness.guardrails import shell_guard
+    from harness.tools.scan import handle_scan
+
+    class FakeGuard:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def check(self, _command):
+            return True, ""
+
+        async def execute_in_mode(self, *_args, **_kwargs):
+            return ShellResult(rc=1, stdout=b"partial output", stderr=b"socket failure",
+                               truncated=False)
+
+    monkeypatch.setattr(shell_guard, "ShellGuard", FakeGuard)
+    engagement = Engagement("eng", "lab", "192.0.2.0/24", "defensive")
+    ctx = SimpleNamespace(
+        gate=ScopeGate([engagement], packages, {}),
+        config=SimpleNamespace(
+            packages=packages,
+            shell=SimpleNamespace(workdir="."),
+            process=SimpleNamespace(container_runtime="podman",
+                                    container_image="image"),
+        ),
+        extra={},
+    )
+
+    result = await handle_scan(ctx, ["192.0.2.10"], "eng", reason="test")
+
+    assert result["error"] == "scan failed (nmap exit code 1)"
+    assert result["stdout"] == "partial output"
+    assert result["stderr"] == "socket failure"

@@ -11,7 +11,8 @@ SCAN_SCHEMA = {
     "name": "scan",
     "description": "Run an operator-approved nmap scan against target(s). Targets must be "
                    "within the engagement's network scope and package limits. Returns parsed "
-                   "host/ports plus up to 50,000 characters of raw output.",
+                   "host/ports plus bounded stdout and stderr diagnostics. The scan assumes "
+                   "the explicitly supplied targets are online and skips host discovery.",
     "parameters": {
         "type": "object",
         "properties": {
@@ -62,7 +63,11 @@ async def handle_scan(ctx: ToolContext, targets: list[str],
         return {"error": f"too many targets ({len(targets)} > {pkg.scan_max_targets})"}
 
     port_str = ",".join(ports) if ports else "1-1024"
-    cmd = ["nmap", scan_type, "-p", port_str, *targets]
+    # The operator has explicitly approved each target, so Nmap's separate
+    # host-discovery probes add no authorization value. On recent macOS,
+    # connect-based discovery can report EINVAL before the actual port scan;
+    # -Pn avoids those probes and scans the supplied target directly.
+    cmd = ["nmap", "-Pn", scan_type, "-p", port_str, *targets]
     # Use ShellGuard for safe execution
     from ..guardrails.shell_guard import ShellGuard
     cmd_str = " ".join(shlex.quote(c) for c in cmd)
@@ -83,13 +88,33 @@ async def handle_scan(ctx: ToolContext, targets: list[str],
         mount_dir=workdir,
     )
     output = result.stdout.decode(errors="replace")
+    stderr = result.stderr.decode(errors="replace")
     if result.timed_out:
-        return {"error": "scan timed out", "partial_output": output[:2000]}
+        return {
+            "error": "scan timed out",
+            "rc": result.rc,
+            "partial_output": output[:2000],
+            "partial_stderr": stderr[:2000],
+            "truncated": result.truncated,
+        }
+    if result.rc != 0:
+        return {
+            "error": f"scan failed (nmap exit code {result.rc})",
+            "rc": result.rc,
+            "stdout": output[:50_000],
+            "stderr": stderr[:50_000],
+            "truncated": result.truncated or len(output) > 50_000 or len(stderr) > 50_000,
+        }
     hosts = _parse_nmap(output)
     return {
         "hosts": hosts,
         "raw": output[:50000],
-        "truncated": len(output) > 50000,
+        "stderr": stderr[:50_000],
+        # Nmap can return success while reporting a socket-level diagnostic.
+        # Mark the result partial so callers do not treat parsed data as a
+        # complete inventory in that case.
+        "partial": bool(stderr.strip()),
+        "truncated": result.truncated or len(output) > 50_000 or len(stderr) > 50_000,
         "rc": result.rc,
     }
 
