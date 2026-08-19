@@ -85,3 +85,41 @@ async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
         "role": "assistant",
         "content": "[COMPACT] Earlier target state summarized.",
     }
+
+
+@pytest.mark.asyncio
+async def test_compaction_uses_structured_source_aware_history(config):
+    harness = Harness(config, [])
+    client = _CompactionClient()
+    harness.router._clients[harness.router.active_id] = client
+    harness.messages = [
+        {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "source-1", "type": "function", "function": {
+                "name": "read_source_code",
+                "arguments": '{"path":"src/api.py"}'}}]},
+        {"role": "tool", "tool_call_id": "source-1", "content":
+         '{"relative_path":"src/api.py","language":"python",'
+         '"line_start":1,"line_end":2,"total_lines":200,"truncated":true,'
+         '"content":"def handle_request(): pass"}'},
+    ]
+
+    assert await harness.compact(2) == "compacted 2 turns"
+    prompt = client.compaction_messages[0][0]["content"]
+    assert "REPOSITORY MAP" in prompt
+    assert "SOURCE path='src/api.py'" in prompt
+    assert "lines=1-2 of 200" in prompt
+
+
+def test_compaction_never_cuts_through_a_tool_exchange(config):
+    harness = Harness(config, [])
+    harness.messages = [
+        {"role": "user", "content": "Inspect source."},
+        {"role": "assistant", "content": None, "tool_calls": [{
+            "id": "source-1", "type": "function", "function": {
+                "name": "read_source_code", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "source-1", "content": "{}"},
+        {"role": "assistant", "content": "Read complete."},
+    ]
+
+    assert harness._safe_compaction_end(2) == 1
+    assert harness._safe_compaction_end(3) == 3

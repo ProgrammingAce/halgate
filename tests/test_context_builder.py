@@ -76,6 +76,23 @@ def test_open_exchange_bounds_large_tool_output_but_keeps_protocol() -> None:
     assert len(messages[1]["content"]) > len(built.messages[1]["content"])
 
 
+def test_open_source_exchange_bounds_code_but_preserves_metadata() -> None:
+    source = "x" * 10_000
+    messages = [
+        {"role": "assistant", "content": None,
+         "tool_calls": [_call("source-1", "read_source_code", {"path": "app.py"})]},
+        {"role": "tool", "tool_call_id": "source-1", "content": json.dumps({
+            "relative_path": "app.py", "language": "python", "content": source})},
+    ]
+
+    built = ToolContextBuilder().build(messages)
+
+    result = json.loads(built.messages[1]["content"])
+    assert result["relative_path"] == "app.py"
+    assert result["truncated_for_context"] is True
+    assert len(result["content"]) < len(source)
+
+
 def test_completed_http_finding_discloses_context_excerpt_and_response_size() -> None:
     body = "x" * 10_000
     messages = [
@@ -94,6 +111,27 @@ def test_completed_http_finding_discloses_context_excerpt_and_response_size() ->
     assert "10000 response bytes" in finding
     assert "tool response complete" in finding
     assert "elapsed=123.45ms" in finding
+
+
+def test_completed_source_read_keeps_path_range_and_language() -> None:
+    messages = [
+        {"role": "assistant", "content": None,
+         "tool_calls": [_call("source-1", "read_source_code", {
+             "path": "src/auth.py", "offset": 40, "limit": 50})]},
+        {"role": "tool", "tool_call_id": "source-1", "content": json.dumps({
+            "relative_path": "src/auth.py", "language": "python",
+            "line_start": 40, "line_end": 89, "total_lines": 240,
+            "truncated": True, "content": "def validate_token(token):\n    return token"})},
+        {"role": "assistant", "content": "I found the token validator."},
+    ]
+
+    built = ToolContextBuilder().build(messages)
+
+    finding = built.messages[0]["content"]
+    assert "SOURCE path='src/auth.py'" in finding
+    assert "language=python" in finding
+    assert "lines=40-89 of 240" in finding
+    assert "def validate_token" in finding
 
 
 def test_harness_only_engagement_metadata_is_not_sent_to_endpoint() -> None:
