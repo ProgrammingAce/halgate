@@ -542,7 +542,11 @@ class Harness:
             summary = c.content
         except Exception as e:
             return f"compact failed: {e}"
-        self.messages = [{"role": "system", "content": f"[COMPACT] {summary}"}] \
+        # The base system prompt is reconstructed for every request in run().
+        # Keep the durable summary as transcript content so the next request
+        # has exactly one leading system message; several chat templates reject
+        # system messages injected after that prompt.
+        self.messages = [{"role": "assistant", "content": f"[COMPACT] {summary}"}] \
             + self.messages[n:]
         self.audit.compact(n, 0)
         self.tracker.reset_current_window()

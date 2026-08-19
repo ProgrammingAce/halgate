@@ -29,6 +29,25 @@ class _SummaryClient:
         pass
 
 
+class _CompactionClient:
+    def __init__(self):
+        self.compaction_messages = []
+        self.stream_messages = []
+
+    async def complete(self, messages, tools=None):
+        self.compaction_messages.append(messages)
+        return Completion(content="Earlier target state summarized.", tool_calls=[],
+                          usage=TokenUsage(10, 5, 15))
+
+    async def stream_complete(self, messages, tools, on_delta):
+        self.stream_messages.append(messages)
+        return Completion(content="Done.", tool_calls=[],
+                          usage=TokenUsage(12, 4, 16))
+
+    async def close(self):
+        pass
+
+
 @pytest.mark.asyncio
 async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config):
     engagement = Engagement("eng1", "target", "192.168.4.10", "defensive")
@@ -43,3 +62,26 @@ async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config)
     assert any("preceding tool calls have completed" in message["content"]
                for message in client.messages[2]
                if message["role"] == "user")
+
+
+@pytest.mark.asyncio
+async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
+    harness = Harness(config, [])
+    client = _CompactionClient()
+    harness.router._clients[harness.router.active_id] = client
+    harness.messages = [
+        {"role": "user", "content": "Inspect the target."},
+        {"role": "assistant", "content": "Beginning inspection."},
+    ]
+
+    assert await harness.compact(2) == "compacted 2 turns"
+    assert harness.messages[0]["role"] == "assistant"
+
+    assert await harness.run("What did you find?") == "Done."
+    request = client.stream_messages[0]
+    assert request[0]["role"] == "system"
+    assert [message["role"] for message in request].count("system") == 1
+    assert request[1] == {
+        "role": "assistant",
+        "content": "[COMPACT] Earlier target state summarized.",
+    }
