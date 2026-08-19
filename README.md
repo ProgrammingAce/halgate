@@ -4,6 +4,8 @@ Halgate is a single-operator, local AI harness for authorized security
 research. It combines a terminal UI with target-scoped tools, approval gates,
 budgets, audit logs, and encrypted handling of discovered credentials.
 
+![Halgate terminal UI](assets/halgate-screenshot.png)
+
 ## Requirements
 
 - Python 3.12+
