@@ -1,0 +1,22 @@
+# Copy this file to config.yaml and customize it for your local environment.
+# Keep credentials in environment variables; do not commit config.yaml.
+llm:
+  active: "local"
+  endpoints:
+    - id: "local"
+      base_url: "http://127.0.0.1:8080/v1"
+      api_key: "${LLM_API_KEY}"
+      model: "your-model-name"
+
+# Start with the restrictive package. Review scope_packages.yaml before using
+# a different package for an authorized engagement.
+scope:
+  package: "defensive"
+
+# Do not enable forensic encryption until a verified recipient is configured.
+audit:
+  forensic_enabled: false
+  gpg_recipient: ""
+
+# Set only when an authorized target must reach a callback listener.
+callback: {}

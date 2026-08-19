@@ -1,0 +1,26 @@
+# Harness runtime state (may contain assessment data, session history, and audit records)
+.harness_audit/
+.harness_evidence/
+.harness_memory/
+.harness_sessions/
+
+# Python environments, caches, and build metadata
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Local editor and operating-system metadata
+.DS_Store
+.idea/
+.vscode/
+
+# Private planning and agent instructions (public Markdown is allowed)
+DESIGN.md
+IMPLEMENT_PROMPT.txt
+
+# Operator-specific endpoints, credentials, and callback settings
+config.yaml

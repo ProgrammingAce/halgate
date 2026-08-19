@@ -1,0 +1,145 @@
+packages:
+  offensive:
+    tools:
+      read_file: true
+      read_source_code: true
+      write_file: true
+      glob: true
+      grep: true
+      shell: true
+      pane_note: true
+      json_extract: true
+      base64_decode: true
+      jwt_inspect: true
+      http_session: true
+      auth_session: true
+      tcp_probe: true
+      http_replay: true
+      multipart_upload: true
+      websocket: true
+      binary_inspect: true
+      # Callback listeners: the agent proposes reason + protocol requirement;
+      # the mandatory approval gate provisions the listener, bound to the
+      # requesting engagement, for narrowly scoped confirmations only.
+      request_callback_endpoint: true
+      read_callback_endpoint: true
+      # Empty permits a command to reach the mandatory operator-approval
+      # prompt.  Hard destructive/privilege/interpreter blocks still apply.
+      shell_allowlist: []
+    http:
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+      max_response_bytes: 10485760
+    scan:
+      enabled: true
+      max_targets: 50
+      max_ports: 65535
+      timeout: 300
+    process:
+      enabled: true
+    # Structured JWT minting; HS256/HS384/HS512 via referenced keystore creds.
+    # Unsigned tokens are only for authorized JWT-parser testing.
+    jwt:
+      sign: true
+      unsigned: true
+      max_ttl_seconds: 600
+      # Phase 2: explicit algorithm set for HS-family parity.
+      algorithms: [HS256, HS384, HS512]
+      # Phase 2: widened claims for typical user/session tokens.
+      # iat/exp/nbf stay tool-anchored.  Operators may narrow per engagement
+      # via `/engagement claims`.
+      allowed_claims: ["iss", "sub", "aud", "jti", "id", "username", "role",
+                       "email", "name", "type", "scope", "locale"]
+    memory: true
+    plan: true
+    guardrails:
+      shell_timeout: 300
+      shell_max_output: 10485760
+      max_concurrent_tools: 4
+      require_confirmation: false   # overridden by approval gate
+
+  defensive:
+    tools:
+      read_file: true
+      read_source_code: true
+      write_file: false
+      glob: true
+      grep: true
+      shell: true
+      pane_note: true
+      json_extract: true
+      base64_decode: true
+      jwt_inspect: true
+      http_session: true
+      auth_session: true
+      tcp_probe: true
+      http_replay: true
+      multipart_upload: false
+      websocket: true
+      binary_inspect: true
+      request_callback_endpoint: true
+      read_callback_endpoint: true
+      # See offensive: user approval, scope validation, and hard blocks are
+      # the policy boundary rather than a brittle binary catalog.
+      shell_allowlist: []
+    http:
+      methods: ["GET", "HEAD", "OPTIONS"]
+      max_response_bytes: 5242880
+    scan:
+      enabled: true
+      max_targets: 10
+      max_ports: 1000
+      timeout: 120
+    process:
+      enabled: true
+    # Token minting stays disabled here: defensive work should consume
+    # tokens, not sign new credential material.
+    jwt:
+      sign: false
+    memory: true
+    plan: true
+    guardrails:
+      shell_timeout: 120
+      shell_max_output: 5242880
+      max_concurrent_tools: 3
+      require_confirmation: true
+
+  read-only:
+    tools:
+      read_file: true
+      read_source_code: true
+      write_file: false
+      glob: true
+      grep: true
+      shell: false
+      http: true
+      http_session: true
+      auth_session: true
+      tcp_probe: true
+      http_replay: true
+      multipart_upload: false
+      websocket: true
+      binary_inspect: true
+      request_callback_endpoint: false
+      read_callback_endpoint: false
+      scan: false
+      process: false
+      memory: true
+      plan: true
+      json_extract: true
+      base64_decode: true
+      jwt_inspect: true
+      shell_allowlist: []
+    http:
+      methods: ["GET", "HEAD"]
+      max_response_bytes: 1048576
+    scan:
+      enabled: false
+    process:
+      enabled: false
+    jwt:
+      sign: false
+    guardrails:
+      shell_timeout: 0
+      shell_max_output: 0
+      max_concurrent_tools: 2
+      require_confirmation: false
