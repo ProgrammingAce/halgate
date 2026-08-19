@@ -26,7 +26,7 @@ def test_load_config_example(monkeypatch):
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     cfg = load_config(REPO / "config.example.yaml", REPO / "scope_packages.yaml")
     assert cfg.llm.active == "local"
-    assert cfg.llm.active_endpoint.model_context == 32768
+    assert cfg.llm.active_endpoint.model_context == 100000
     assert set(cfg.packages) == {"offensive", "defensive", "read-only"}
     ro = cfg.packages["read-only"]
     assert ro.permits("read_file") and ro.permits("http")

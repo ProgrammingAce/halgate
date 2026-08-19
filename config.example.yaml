@@ -7,6 +7,7 @@ llm:
       base_url: "http://127.0.0.1:8080/v1"
       api_key: "${LLM_API_KEY}"
       model: "your-model-name"
+      model_context: 100000
 
 # Start with the restrictive package. Review scope_packages.yaml before using
 # a different package for an authorized engagement.
