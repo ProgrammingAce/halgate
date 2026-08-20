@@ -4,9 +4,9 @@ import json
 import httpx
 import pytest
 
-from harness.config import Config, EndpointConfig, LLMConfig
-from harness.llm.client import EndpointHTTPError, OpenAIClient
-from harness.llm.router import LLMRouter
+from halgate.config import Config, EndpointConfig, LLMConfig
+from halgate.llm.client import EndpointHTTPError, OpenAIClient
+from halgate.llm.router import LLMRouter
 
 
 def make_endpoint(**kw) -> EndpointConfig:

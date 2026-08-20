@@ -2,8 +2,8 @@ import ipaddress
 
 import pytest
 
-from harness.errors import ScopeError
-from harness.scope import (
+from halgate.errors import ScopeError
+from halgate.scope import (
     Engagement,
     ScopeGate,
     command_binaries,

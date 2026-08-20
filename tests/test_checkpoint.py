@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from harness.scope import Engagement
-from harness.sessions.checkpoint import SessionCheckpoint
+from halgate.scope import Engagement
+from halgate.sessions.checkpoint import SessionCheckpoint
 
 
 def sample_engagements(tmp_path):

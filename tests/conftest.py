@@ -7,7 +7,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from harness.config import Config, load_config, load_packages  # noqa: E402
+from halgate.config import Config, load_config, load_packages  # noqa: E402
 
 TEST_FINGERPRINT = "0123456789ABCDEF0123456789ABCDEF01234567"
 FAKE_GPG = REPO_ROOT / "tests" / "fixtures" / "fake_gpg.py"
@@ -66,7 +66,7 @@ class FakeLLM:
         self.calls: list[list[dict]] = []
 
     async def complete(self, messages: list[dict], tools: list[dict] | None = None):
-        from harness.llm.client import Completion, TokenUsage
+        from halgate.llm.client import Completion, TokenUsage
         self.calls.append(messages)
         if not self.responses:
             return Completion(content="done", tool_calls=[],

@@ -1,6 +1,6 @@
 """Terminal control traffic must never become chat prompt text."""
 
-from harness.tui import _strip_terminal_input_sequences
+from halgate.tui import _strip_terminal_input_sequences
 
 
 def test_strips_sgr_mouse_reports() -> None:

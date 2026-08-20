@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.scope import Engagement, ScopeGate
-from harness.tools import multipart_upload, websocket
-from harness.tools.binary_inspect import handle_binary_inspect
-from harness.tools.multipart_upload import handle_multipart_upload
+from halgate.scope import Engagement, ScopeGate
+from halgate.tools import multipart_upload, websocket
+from halgate.tools.binary_inspect import handle_binary_inspect
+from halgate.tools.multipart_upload import handle_multipart_upload
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@
 
 import json
 
-from harness.context_builder import ToolContextBuilder
+from halgate.context_builder import ToolContextBuilder
 
 
 def _call(call_id: str, name: str, arguments: dict) -> dict:

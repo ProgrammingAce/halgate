@@ -146,7 +146,7 @@ class Engagement:
     jwt_claim_extensions: tuple[str, ...] = ()
     status: str = "active"             # "active" | "paused"
     created: str = ""
-    # Provisioned by Harness; never accepted from an engagement package.
+    # Provisioned by Halgate; never accepted from an engagement package.
     scratch_dir: str = ""
 
     def __post_init__(self) -> None:

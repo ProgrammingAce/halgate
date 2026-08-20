@@ -1,4 +1,4 @@
-"""Harness: main async agent loop."""
+"""Halgate: main async agent loop."""
 from __future__ import annotations
 
 import json
@@ -31,7 +31,7 @@ from .tracker import ContextTracker, LifetimeTokenCounter
 from .tools.registry import ToolRegistry
 
 
-class Harness:
+class Halgate:
     _COMPACTION_INPUT_CHARS = 48_000
     _COMPACTION_SUMMARY_TOKENS = 700
     def __init__(self, config: Config, engagements: list[Engagement],

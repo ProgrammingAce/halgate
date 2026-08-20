@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.scope import Engagement, ScopeGate
-from harness.tools.read_source_code import handle_read_source_code
+from halgate.scope import Engagement, ScopeGate
+from halgate.tools.read_source_code import handle_read_source_code
 
 
 def _ctx(packages, scratch):

@@ -1,9 +1,9 @@
 """Tests for SafetyController: panic stop and resume."""
 import pytest
 
-from harness.config import SafetyConfig
-from harness.safety import SafetyController
-from harness.errors import StoppedError
+from halgate.config import SafetyConfig
+from halgate.safety import SafetyController
+from halgate.errors import StoppedError
 
 
 class FakeProcessMgr:

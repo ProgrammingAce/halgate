@@ -2,16 +2,16 @@
 import asyncio
 import pytest
 
-from harness.config import Config, ProcessConfig
-from harness.process import ProcessManager
+from halgate.config import Config, ProcessConfig
+from halgate.process import ProcessManager
 
 
 @pytest.fixture
 def pm(tmp_path):
     cfg = Config(
-        llm=__import__("harness.config", fromlist=["LLMConfig"]).LLMConfig(
+        llm=__import__("halgate.config", fromlist=["LLMConfig"]).LLMConfig(
             active="test",
-            endpoints=[__import__("harness.config", fromlist=["EndpointConfig"])
+            endpoints=[__import__("halgate.config", fromlist=["EndpointConfig"])
                        .EndpointConfig(id="test", base_url="http://x", model="m")],
         ),
         process=ProcessConfig(max_panes=4),

@@ -6,8 +6,8 @@ import stat
 
 import pytest
 
-from harness.config import AuditConfig
-from harness.openpgp import backend_from_config, generate_keypair
+from halgate.config import AuditConfig
+from halgate.openpgp import backend_from_config, generate_keypair
 
 
 def test_pgpy_generated_keypair_encrypts_and_decrypts(tmp_path, monkeypatch):

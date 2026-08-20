@@ -8,15 +8,15 @@ import time
 
 import pytest
 
-from harness.audit.logger import AuditLogger
-from harness.dispatch import (
+from halgate.audit.logger import AuditLogger
+from halgate.dispatch import (
     AUTO_APPROVE, ApprovalResult, dispatch_parallel,
 )
-from harness.guardrails.redactor import Redactor
-from harness.llm.client import ToolCall
-from harness.memory.keystore import KeyStore
-from harness.scope import Engagement, ScopeGate, ScopePackage
-from harness.tools.jwt_sign import JWT_SIGN_SCHEMA, handle_jwt_sign
+from halgate.guardrails.redactor import Redactor
+from halgate.llm.client import ToolCall
+from halgate.memory.keystore import KeyStore
+from halgate.scope import Engagement, ScopeGate, ScopePackage
+from halgate.tools.jwt_sign import JWT_SIGN_SCHEMA, handle_jwt_sign
 
 CRED_ID = "cred_" + "a" * 32
 KEY = "unit-test-hs256-key"
@@ -305,13 +305,13 @@ def test_real_audit_logger_event_is_chained_and_leak_free(config) -> None:
 
 
 def test_tui_approval_reason_names_the_boundary() -> None:
-    from harness.tui import _approval_requirement_reason
-    from harness.llm.client import ToolCall
+    from halgate.tui import _approval_requirement_reason
+    from halgate.llm.client import ToolCall
     text = _approval_requirement_reason(ToolCall(
         id="t", name="jwt_sign", arguments={"claims": {"iss": "svc"}}))
     assert "HS256" in text and "keystore" in text.lower()
     # jwt_sign can inherit an operator's session-only target approval.
-    from harness.tui import TARGET_AUTO_APPROVE_TOOLS
+    from halgate.tui import TARGET_AUTO_APPROVE_TOOLS
     assert "jwt_sign" in TARGET_AUTO_APPROVE_TOOLS
 
 
@@ -532,7 +532,7 @@ async def _seed_token(ctx, engagement_id: str, session: str = "default",
 @pytest.mark.asyncio
 async def test_auth_session_inject_at_places_stored_token_in_body(
         monkeypatch) -> None:
-    from harness.tools import auth_session
+    from halgate.tools import auth_session
     received = []
 
     async def fake_session(ctx, url, engagement_id, method, headers, body,
@@ -561,7 +561,7 @@ async def test_auth_session_inject_at_places_stored_token_in_body(
 
 @pytest.mark.asyncio
 async def test_auth_session_inject_at_requires_stored_token() -> None:
-    from harness.tools import auth_session
+    from halgate.tools import auth_session
 
     async def fake_session(ctx, url, engagement_id, method, headers, body,
                            session, **_):
@@ -581,7 +581,7 @@ async def test_auth_session_inject_at_requires_stored_token() -> None:
 
 @pytest.mark.asyncio
 async def test_auth_session_inject_at_requires_valid_json_body() -> None:
-    from harness.tools import auth_session
+    from halgate.tools import auth_session
 
     async def fake_session(ctx, url, engagement_id, method, headers, body,
                            session, **_):
@@ -602,7 +602,7 @@ async def test_auth_session_inject_at_requires_valid_json_body() -> None:
 
 def test_checkpoint_tolerates_missing_jwt_claim_extensions(tmp_path) -> None:
     import json as _json
-    from harness.sessions.checkpoint import SessionCheckpoint
+    from halgate.sessions.checkpoint import SessionCheckpoint
     d = tmp_path / "s1"
     d.mkdir()
     (d / "meta.json").write_text(_json.dumps({
@@ -620,7 +620,7 @@ def test_checkpoint_tolerates_missing_jwt_claim_extensions(tmp_path) -> None:
 
 def test_checkpoint_round_trips_jwt_claim_extensions(tmp_path) -> None:
     import json as _json
-    from harness.sessions.checkpoint import SessionCheckpoint
+    from halgate.sessions.checkpoint import SessionCheckpoint
     cp = SessionCheckpoint(str(tmp_path), "s1")
     cp.save("s1", "s1", [], [],
             [Engagement("eng-a", "a", "127.0.0.1", "offensive",

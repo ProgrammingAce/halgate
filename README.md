@@ -30,8 +30,8 @@ Update `config.yaml` with your local LLM endpoint you control.
 ## Run
 
 ```sh
-uv run harness --help
-uv run harness --dry-run
+uv run halgate --help
+uv run halgate --dry-run
 uv run pytest -q
 ```
 
@@ -39,7 +39,7 @@ uv run pytest -q
 
 Requires Docker (or Podman with `podman compose`). The container runs as a
 non-root user (uid 1000); pick the host folder that stores the harness state
-(`.harness_memory`, `.harness_audit`, `.harness_sessions`, `.harness_evidence`)
+(`.halgate_memory`, `.halgate_audit`, `.halgate_sessions`, `.halgate_evidence`)
 with `HALGATE_DATA_HOST` (default `./halgate-data`).
 
 ```sh
@@ -61,12 +61,24 @@ HALGATE_DATA_HOST=./data/docker docker compose up
 EXTRA_TOOLS="sqlmap ffuf masscan hydra thc-hydra nikto whatweb" docker compose up
 
 # Run a subcommand instead of the TUI:
-docker compose run --rm halgate harness session list
+docker compose run --rm halgate halgate session list
 ```
 
 The in-container state root is the `HALGATE_DATA_DIR` build arg (default
 `/halgate`); keep it in sync between `Dockerfile` and `docker-compose.yml` if
 you change it.
+
+Example:
+```sh
+podman network create halnet
+podman run -it --rm --network=halnet --name halgate \
+  -v "$PWD/halgate-data:/halgate" \
+  -v "$PWD/config.yaml:/home/halgate/.config/halgate/config.yaml:ro" \
+  -v "$PWD/scope_packages.yaml:/home/halgate/.config/halgate/scope_packages.yaml:ro" \
+  halgate:latest
+```
+
+Add other containers to the halnet network for Halgate to reach them.
 
 ## Safety
 

@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from harness.config import (
+from halgate.config import (
     CallbackConfig, Config, TUIConfig, load_config, load_packages, _expand_env,
 )
-from harness.errors import ConfigError
+from halgate.errors import ConfigError
 
 REPO = Path(__file__).resolve().parent.parent
 

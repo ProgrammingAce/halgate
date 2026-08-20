@@ -4,12 +4,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.dispatch import (
+from halgate.dispatch import (
     AUTO_APPROVE, ApprovalResult, dispatch_parallel,
 )
-from harness.llm.client import ToolCall
-from harness.scope import Engagement, ScopeGate
-from harness.tools.callback_endpoint import (
+from halgate.llm.client import ToolCall
+from halgate.scope import Engagement, ScopeGate
+from halgate.tools.callback_endpoint import (
     DEFAULT_EXPIRY_SECONDS,
     READ_CALLBACK_ENDPOINT_SCHEMA,
     REQUEST_CALLBACK_ENDPOINT_SCHEMA,

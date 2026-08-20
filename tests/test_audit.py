@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from harness.audit.logger import AuditLogger, verify_chain
-from harness.audit import replay
-from harness.errors import ForensicEncryptionError
+from halgate.audit.logger import AuditLogger, verify_chain
+from halgate.audit import replay
+from halgate.errors import ForensicEncryptionError
 
 AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
 SECRET_TEXT = f"leaked password: {AWS_KEY} found here"
@@ -56,7 +56,7 @@ def test_forensic_payload_encrypted_and_linked(logger, config):
     assert b"BEGIN PGP MESSAGE" in blob
     # decrypt round-trips through the local (fake) agent
     import asyncio
-    from harness.gpg import Gpg
+    from halgate.gpg import Gpg
     gpg = Gpg(config.audit.gpg_recipient, None, config.audit.gpg_executable)
     out = asyncio.run(gpg.decrypt(blob)).decode()
     assert AWS_KEY in out
@@ -140,7 +140,7 @@ def test_forensic_failure_does_not_consume_audit_sequence(logger, monkeypatch):
 
 def test_decrypt_payload_round_trip_and_audit_event(logger, config, instance_id):
     import asyncio
-    from harness.audit.replay import decrypt_payload
+    from halgate.audit.replay import decrypt_payload
     logger.session_start([], "llm", resumed=False)
     raw_text = "token: " + AWS_KEY
     logger.user_input("redacted", raw=raw_text)  # forensic payload at seq 2
@@ -158,8 +158,8 @@ def test_decrypt_payload_round_trip_and_audit_event(logger, config, instance_id)
 
 def test_decrypt_payload_missing_seq_raises(logger, config, instance_id):
     import asyncio
-    from harness.audit.replay import decrypt_payload
-    from harness.errors import GpgError
+    from halgate.audit.replay import decrypt_payload
+    from halgate.errors import GpgError
     logger.session_start([], "llm", resumed=False)
     with pytest.raises(GpgError):
         asyncio.run(decrypt_payload(
@@ -168,8 +168,8 @@ def test_decrypt_payload_missing_seq_raises(logger, config, instance_id):
 
 def test_cli_audit_decrypt(config, instance_id, capsys):
     from types import SimpleNamespace
-    from harness.audit.logger import AuditLogger
-    from harness.cli import _handle_audit
+    from halgate.audit.logger import AuditLogger
+    from halgate.cli import _handle_audit
     logger = AuditLogger(config.audit, "sess-cli-1", instance_id)
     logger.session_start([], "llm", resumed=False)
     logger.user_input("redacted", raw="token: " + AWS_KEY)

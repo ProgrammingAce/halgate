@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.guardrails.shell_guard import ShellResult
-from harness.scope import Engagement, ScopeGate
-from harness.tools.scan import _parse_nmap
+from halgate.guardrails.shell_guard import ShellResult
+from halgate.scope import Engagement, ScopeGate
+from halgate.tools.scan import _parse_nmap
 
 
 def test_parse_nmap_extracts_standard_port_table_rows() -> None:
@@ -50,8 +50,8 @@ Not shown: 1000 closed tcp ports (reset)
 
 @pytest.mark.asyncio
 async def test_scan_preserves_nmap_stderr_diagnostics(packages, monkeypatch) -> None:
-    from harness.guardrails import shell_guard
-    from harness.tools.scan import handle_scan
+    from halgate.guardrails import shell_guard
+    from halgate.tools.scan import handle_scan
 
     class FakeGuard:
         def __init__(self, *_args, **_kwargs):
@@ -91,8 +91,8 @@ async def test_scan_preserves_nmap_stderr_diagnostics(packages, monkeypatch) -> 
 
 @pytest.mark.asyncio
 async def test_scan_returns_nonzero_nmap_exit_as_failure(packages, monkeypatch) -> None:
-    from harness.guardrails import shell_guard
-    from harness.tools.scan import handle_scan
+    from halgate.guardrails import shell_guard
+    from halgate.tools.scan import handle_scan
 
     class FakeGuard:
         def __init__(self, *_args, **_kwargs):

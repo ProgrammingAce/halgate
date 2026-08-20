@@ -1,8 +1,8 @@
 """Tests for MemoryStore: remember, recall, forget, pin, tombstones."""
 import pytest
 
-from harness.config import MemoryConfig
-from harness.memory.store import MemoryStore
+from halgate.config import MemoryConfig
+from halgate.memory.store import MemoryStore
 
 
 @pytest.fixture

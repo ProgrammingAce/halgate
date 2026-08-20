@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from harness.dispatch import ApprovalResult
-from harness.llm.client import ToolCall
-from harness.scope import Engagement
-from harness.tui import HarnessApp, _approval_requirement_reason, _exact_action_target
+from halgate.dispatch import ApprovalResult
+from halgate.llm.client import ToolCall
+from halgate.scope import Engagement
+from halgate.tui import HalgateApp, _approval_requirement_reason, _exact_action_target
 
 
 def _call(name: str, arguments: dict) -> ToolCall:
@@ -52,7 +52,7 @@ def test_approval_rationale_names_the_relevant_safety_boundary() -> None:
 @pytest.mark.asyncio
 async def test_approve_all_covers_concurrent_endpoints_in_one_engagement() -> None:
     """One approval covers queued calls to any endpoint in its target scope."""
-    app = object.__new__(HarnessApp)
+    app = object.__new__(HalgateApp)
     app._chat = None
     app._target_auto_approvals = set()
     app._approval_decision_lock = asyncio.Lock()

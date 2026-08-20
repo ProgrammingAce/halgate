@@ -9,12 +9,12 @@ from textual.app import App, ComposeResult
 from textual.css.scalar import Unit
 from textual.widgets import Button, Input, RichLog
 
-from harness.scope import Engagement
-from harness.tui import (
+from halgate.scope import Engagement
+from halgate.tui import (
     ChatInput,
     ConfigModal,
     ChatPanel,
-    HarnessApp,
+    HalgateApp,
     HelpModal,
     OnboardingModal,
     PanePanel,
@@ -34,7 +34,7 @@ class PaneTestApp(App):
 
 
 class ChatTestApp(App):
-    CSS = HarnessApp.CSS
+    CSS = HalgateApp.CSS
 
     def compose(self) -> ComposeResult:
         chat = ChatPanel()
@@ -243,7 +243,7 @@ def test_load_uses_the_only_active_engagement_when_no_pane_exists(tmp_path: Path
             self.callback = callback
 
     app = LoadApp()
-    HarnessApp._open_scratch_picker(app)
+    HalgateApp._open_scratch_picker(app)
 
     assert app.notifications == []
     assert app.screen is not None
@@ -269,8 +269,8 @@ async def test_onboarding_lifetime_usage_is_docked_at_the_bottom() -> None:
         await pilot.pause()
 
 
-def _harness_stub(chat_width_pct: int) -> SimpleNamespace:
-    """Just enough harness surface for HarnessApp.on_mount to run."""
+def _halgate_stub(chat_width_pct: int) -> SimpleNamespace:
+    """Just enough halgate surface for HalgateApp.on_mount to run."""
     return SimpleNamespace(
         session_id="8d3d4bd12df1",
         engagements=[SimpleNamespace(id="eng-01", package="defensive",
@@ -290,8 +290,8 @@ def _harness_stub(chat_width_pct: int) -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_chat_width_and_identity_follow_config() -> None:
-    harness = _harness_stub(75)
-    app = HarnessApp(harness)
+    halgate = _halgate_stub(75)
+    app = HalgateApp(halgate)
     async with app.run_test() as pilot:
         await pilot.pause()
 
@@ -308,26 +308,26 @@ async def test_chat_width_and_identity_follow_config() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_width_nudges_step_and_clamp_at_bounds() -> None:
-    harness = _harness_stub(75)
-    app = HarnessApp(harness)
+    halgate = _halgate_stub(75)
+    app = HalgateApp(halgate)
     async with app.run_test() as pilot:
         await pilot.pause()
 
         app.action_grow_chat()
-        assert harness.config.tui.chat_width_pct == 79
+        assert halgate.config.tui.chat_width_pct == 79
         width = app.query_one("#chat-panel").styles.width
         assert (width.value, width.unit) == (79.0, Unit.WIDTH)
 
         app.action_shrink_chat()
-        assert harness.config.tui.chat_width_pct == 75
+        assert halgate.config.tui.chat_width_pct == 75
 
-        harness.config.tui.chat_width_pct = 80
+        halgate.config.tui.chat_width_pct = 80
         app.action_grow_chat()
-        assert harness.config.tui.chat_width_pct == 80
+        assert halgate.config.tui.chat_width_pct == 80
 
-        harness.config.tui.chat_width_pct = 20
+        halgate.config.tui.chat_width_pct = 20
         app.action_shrink_chat()
-        assert harness.config.tui.chat_width_pct == 20
+        assert halgate.config.tui.chat_width_pct == 20
 
 
 @pytest.mark.asyncio
@@ -502,15 +502,15 @@ async def test_pane_notes_render_markdown() -> None:
 
 @pytest.mark.asyncio
 async def test_header_buttons_open_help_and_config() -> None:
-    harness = _harness_stub(62)
-    harness.router.active_endpoint = SimpleNamespace(
+    halgate = _halgate_stub(62)
+    halgate.router.active_endpoint = SimpleNamespace(
         id="remote-coder", base_url="https://api.example", model="model",
         api_key="key", temperature=0.2, max_tokens=4096)
-    app = HarnessApp(harness)
+    app = HalgateApp(halgate)
     async with app.run_test() as pilot:
         await pilot.pause()
 
-        assert ("f1", "help", "Help") in HarnessApp.BINDINGS
+        assert ("f1", "help", "Help") in HalgateApp.BINDINGS
         help_btn = app.query_one("#header-help", Button)
         config_btn = app.query_one("#header-config", Button)
 
@@ -544,10 +544,10 @@ async def test_secret_reveal_is_audited() -> None:
         def secret_reveal(self, cred_id: str) -> None:
             revealed.append(cred_id)
 
-    harness = _harness_stub(62)
-    harness._keystore = _FakeKeyStore()
-    harness.audit = _FakeAudit()
-    app = HarnessApp(harness)
+    halgate = _halgate_stub(62)
+    halgate._keystore = _FakeKeyStore()
+    halgate.audit = _FakeAudit()
+    app = HalgateApp(halgate)
     async with app.run_test() as pilot:
         await pilot.pause()
         await app._handle_command("/secret reveal cred_abc123")

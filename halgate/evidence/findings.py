@@ -128,7 +128,7 @@ class FindingStore:
                        "master/Schemata/sarif-schema-2.1.0.json",
             "version": "2.1.0",
             "runs": [{
-                "tool": {"driver": {"name": "halgate-harness"}},
+                "tool": {"driver": {"name": "halgate"}},
                 "results": results,
             }],
         }

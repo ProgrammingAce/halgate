@@ -6,22 +6,22 @@ import shutil
 import subprocess
 import pytest
 
-from harness.config import (
+from halgate.config import (
     Config, SafetyConfig, ScopePackage,
     BudgetsConfig, BudgetLimits, EvidenceConfig,
     EndpointConfig, LLMConfig, MemoryConfig,
     ProcessConfig,
 )
-from harness.scope import Engagement, ScopeGate
-from harness.dispatch import (
+from halgate.scope import Engagement, ScopeGate
+from halgate.dispatch import (
     dispatch_parallel, BUDGET_KIND_BY_TOOL, _DEFAULT_BUDGET_KIND,
     ApprovalResult,
 )
-from harness.llm.client import ToolCall
-from harness.evidence.findings import FindingStore
-from harness.evidence.store import EvidenceStore
-from harness.memory.store import MemoryStore
-from harness.process import ProcessManager
+from halgate.llm.client import ToolCall
+from halgate.evidence.findings import FindingStore
+from halgate.evidence.store import EvidenceStore
+from halgate.memory.store import MemoryStore
+from halgate.process import ProcessManager
 
 
 class NoopRedactor:
@@ -190,7 +190,7 @@ class TestBudgetExhaustionWithMapping:
 
     @pytest.mark.asyncio
     async def test_http_exhausts_max_requests(self, tmp_path):
-        from harness.budget import BudgetManager
+        from halgate.budget import BudgetManager
         s = _net_setup(tmp_path)
         eng = s["eng"]
         bm = BudgetManager(
@@ -212,7 +212,7 @@ class TestBudgetExhaustionWithMapping:
 
     @pytest.mark.asyncio
     async def test_scan_uses_max_scan_targets_not_max_actions(self, tmp_path):
-        from harness.budget import BudgetManager
+        from halgate.budget import BudgetManager
         s = _net_setup(tmp_path)
         eng = s["eng"]
         bm = BudgetManager(
@@ -229,7 +229,7 @@ class TestBudgetExhaustionWithMapping:
 
     @pytest.mark.asyncio
     async def test_scan_exhausts_max_scan_targets(self, tmp_path):
-        from harness.budget import BudgetManager
+        from halgate.budget import BudgetManager
         s = _net_setup(tmp_path)
         eng = s["eng"]
         bm = BudgetManager(
@@ -372,7 +372,7 @@ class TestHttpNoRedirect:
     """Bug 9: follow_redirects=True allowed scope bypass via 302 redirect."""
 
     def test_redirects_disabled(self):
-        from harness.tools.http import handle_http
+        from halgate.tools.http import handle_http
         src = inspect.getsource(handle_http)
         assert "follow_redirects=False" in src
         assert "follow_redirects=True" not in src
@@ -382,12 +382,12 @@ class TestGpgDecryptArgs:
     """Bug 12: --passphrase-fd 0 conflicts with encrypted data on stdin."""
 
     def test_base_args_no_passphrase_fd(self):
-        from harness.gpg import Gpg
+        from halgate.gpg import Gpg
         gpg = Gpg("0123456789ABCDEF0123456789ABCDEF01234567")
         assert "--passphrase-fd" not in gpg._base_args()
 
     def test_decrypt_args_no_passphrase_fd(self):
-        from harness.gpg import Gpg
+        from halgate.gpg import Gpg
         gpg = Gpg("0123456789ABCDEF0123456789ABCDEF01234567")
         decrypt_args = gpg._base_args() + ["--yes", "--decrypt"]
         assert "--passphrase-fd" not in decrypt_args
@@ -398,13 +398,13 @@ class TestRestoredSessionShape:
     r.engagements (list[Engagement])."""
 
     def test_has_engagements_list(self):
-        from harness.sessions.checkpoint import RestoredSession
+        from halgate.sessions.checkpoint import RestoredSession
         rs = RestoredSession(session_id="s1", name="test")
         assert hasattr(rs, "engagements")
         assert isinstance(rs.engagements, list)
 
     def test_no_engagement_ids(self):
-        from harness.sessions.checkpoint import RestoredSession
+        from halgate.sessions.checkpoint import RestoredSession
         rs = RestoredSession(session_id="s1", name="test")
         assert not hasattr(rs, "engagement_ids")
 
@@ -444,7 +444,7 @@ class TestCliTuiDispatch:
     args.command != 'tui' guard in the outer condition."""
 
     def test_tui_command_enters_tui_path(self):
-        import harness.cli as cli
+        import halgate.cli as cli
         src = inspect.getsource(cli)
         # The old buggy condition
         assert 'args.command != "tui"' not in src, (
@@ -453,20 +453,20 @@ class TestCliTuiDispatch:
 
 
 class TestAwaitRedactor:
-    """Bug 4: harness.py called self._redactor.redact() without await.
+    """Bug 4: halgate.py called self._redactor.redact() without await.
     redact is async → the coroutine was never awaited.
     Verify the source uses await."""
 
     def test_run_awaits_redact(self):
-        from harness.harness import Harness
-        src = inspect.getsource(Harness.run)
+        from halgate.halgate import Halgate
+        src = inspect.getsource(Halgate.run)
         # The fixed call includes await
         assert "await self._redactor.redact(" in src, (
-            "harness.py run() does not await redactor.redact()")
+            "halgate.py run() does not await redactor.redact()")
 
     def test_completion_content_awaits_redact(self):
-        from harness.harness import Harness
-        src = inspect.getsource(Harness.run)
+        from halgate.halgate import Halgate
+        src = inspect.getsource(Halgate.run)
         # Find the completion.content redaction line
         lines = [l.strip() for l in src.splitlines()
                  if "completion.content" in l and "redact" in l]
@@ -478,19 +478,19 @@ class TestAwaitRedactor:
 
 
 class TestAwaitSafetyPanic:
-    """Bug 5: harness.py shutdown() called safety.panic() without await.
+    """Bug 5: halgate.py shutdown() called safety.panic() without await.
     panic is async → the coroutine was never awaited, panes not killed,
     checkpoint not written."""
 
     def test_shutdown_awaits_panic(self):
-        from harness.harness import Harness
-        src = inspect.getsource(Harness.shutdown)
+        from halgate.halgate import Halgate
+        src = inspect.getsource(Halgate.shutdown)
         assert "await self.safety.panic(" in src, (
-            "harness.py shutdown() does not await safety.panic()")
+            "halgate.py shutdown() does not await safety.panic()")
 
     def test_shutdown_passes_checkpoint_fn(self):
-        from harness.harness import Harness
-        src = inspect.getsource(Harness.shutdown)
+        from halgate.halgate import Halgate
+        src = inspect.getsource(Halgate.shutdown)
         assert "checkpoint_fn=" in src, (
-            "harness.py shutdown() should pass checkpoint_fn "
+            "halgate.py shutdown() should pass checkpoint_fn "
             "to safety.panic()")

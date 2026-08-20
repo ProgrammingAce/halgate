@@ -1,9 +1,9 @@
-"""The harness must request a final summary after empty tool-followup turns."""
+"""The halgate must request a final summary after empty tool-followup turns."""
 import pytest
 
-from harness.harness import Harness
-from harness.llm.client import Completion, TokenUsage, ToolCall
-from harness.scope import Engagement
+from halgate.halgate import Halgate
+from halgate.llm.client import Completion, TokenUsage, ToolCall
+from halgate.scope import Engagement
 
 
 class _SummaryClient:
@@ -51,11 +51,11 @@ class _CompactionClient:
 @pytest.mark.asyncio
 async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config):
     engagement = Engagement("eng1", "target", "192.168.4.10", "defensive")
-    harness = Harness(config, [engagement])
+    halgate = Halgate(config, [engagement])
     client = _SummaryClient()
-    harness.router._clients[harness.router.active_endpoint.id] = client
+    halgate.router._clients[halgate.router.active_endpoint.id] = client
 
-    result = await harness.run("Inspect the target")
+    result = await halgate.run("Inspect the target")
 
     assert result == "Summary of completed tool work."
     assert len(client.messages) == 3
@@ -66,18 +66,18 @@ async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config)
 
 @pytest.mark.asyncio
 async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
-    harness = Harness(config, [])
+    halgate = Halgate(config, [])
     client = _CompactionClient()
-    harness.router._clients[harness.router.active_endpoint.id] = client
-    harness.messages = [
+    halgate.router._clients[halgate.router.active_endpoint.id] = client
+    halgate.messages = [
         {"role": "user", "content": "Inspect the target."},
         {"role": "assistant", "content": "Beginning inspection."},
     ]
 
-    assert await harness.compact(2) == "compacted 2 turns"
-    assert harness.messages[0]["role"] == "assistant"
+    assert await halgate.compact(2) == "compacted 2 turns"
+    assert halgate.messages[0]["role"] == "assistant"
 
-    assert await harness.run("What did you find?") == "Done."
+    assert await halgate.run("What did you find?") == "Done."
     request = client.stream_messages[0]
     assert request[0]["role"] == "system"
     assert [message["role"] for message in request].count("system") == 1
@@ -89,10 +89,10 @@ async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
 
 @pytest.mark.asyncio
 async def test_compaction_uses_structured_source_aware_history(config):
-    harness = Harness(config, [])
+    halgate = Halgate(config, [])
     client = _CompactionClient()
-    harness.router._clients[harness.router.active_endpoint.id] = client
-    harness.messages = [
+    halgate.router._clients[halgate.router.active_endpoint.id] = client
+    halgate.messages = [
         {"role": "assistant", "content": None, "tool_calls": [{
             "id": "source-1", "type": "function", "function": {
                 "name": "read_source_code",
@@ -103,7 +103,7 @@ async def test_compaction_uses_structured_source_aware_history(config):
          '"content":"def handle_request(): pass"}'},
     ]
 
-    assert await harness.compact(2) == "compacted 2 turns"
+    assert await halgate.compact(2) == "compacted 2 turns"
     prompt = client.compaction_messages[0][0]["content"]
     assert "REPOSITORY MAP" in prompt
     assert "SOURCE path='src/api.py'" in prompt
@@ -111,8 +111,8 @@ async def test_compaction_uses_structured_source_aware_history(config):
 
 
 def test_compaction_never_cuts_through_a_tool_exchange(config):
-    harness = Harness(config, [])
-    harness.messages = [
+    halgate = Halgate(config, [])
+    halgate.messages = [
         {"role": "user", "content": "Inspect source."},
         {"role": "assistant", "content": None, "tool_calls": [{
             "id": "source-1", "type": "function", "function": {
@@ -121,5 +121,5 @@ def test_compaction_never_cuts_through_a_tool_exchange(config):
         {"role": "assistant", "content": "Read complete."},
     ]
 
-    assert harness._safe_compaction_end(2) == 1
-    assert harness._safe_compaction_end(3) == 3
+    assert halgate._safe_compaction_end(2) == 1
+    assert halgate._safe_compaction_end(3) == 3

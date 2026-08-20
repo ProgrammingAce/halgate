@@ -26,7 +26,7 @@ from textual.widgets import (
 )
 from textual.screen import ModalScreen
 
-from .harness import Harness
+from .halgate import Halgate
 from .dispatch import ApprovalResult, dispatch_parallel
 from .llm.client import ToolCall
 from .scope import extract_hostnames, extract_target_refs, extract_urls
@@ -1295,7 +1295,7 @@ class SessionsModal(ModalScreen):
         ("d", "delete", "Delete"),
     ]
 
-    def __init__(self, sessions: list[dict], sessions_dir: str = ".harness_sessions"):
+    def __init__(self, sessions: list[dict], sessions_dir: str = ".halgate_sessions"):
         super().__init__()
         self._sessions = sessions[:9]
         self._cursor = 0
@@ -1562,7 +1562,7 @@ class ConfigModal(ModalScreen):
             super().__init__()
 
 
-class HarnessApp(App):
+class HalgateApp(App):
     """Main textual application."""
 
     CSS = """
@@ -1716,9 +1716,9 @@ class HarnessApp(App):
         ("ctrl+shift+right_square_bracket", "grow_chat", "Widen chat"),
     ]
 
-    def __init__(self, harness: Harness):
+    def __init__(self, halgate: Halgate):
         super().__init__()
-        self.h = harness
+        self.h = halgate
         self._chat: ChatPanel | None = None
         self._pane_panel: PanePanel | None = None
         self._processing = False
@@ -2647,12 +2647,12 @@ class HarnessApp(App):
                 if val:
                     self.h.audit.secret_reveal(secret_parts[1])
                     self._chat.add_agent(f"Revealed (value hidden — "
-                                         f"use CLI `harness secret reveal {secret_parts[1]}` to display)")
+                                          f"use CLI `halgate secret reveal {secret_parts[1]}` to display)")
                 else:
                     self._chat.add_agent("[red]Not found or decryption failed.[/red]")
             elif secret_parts and secret_parts[0] == "store":
                 self._chat.add_agent(
-                    "Store a secret via the CLI: [bold]harness secret store "
+                    "Store a secret via the CLI: [bold]halgate secret store "
                     "[/bold](value is entered via getpass, never logged). "
                     "The returned cred_<uuid> id can then be used with jwt_sign.")
             else:

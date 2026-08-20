@@ -1,18 +1,18 @@
 """Tests for dispatch_parallel: approval gating, dry-run, budget."""
 import pytest
 
-from harness.config import (BudgetLimits, BudgetsConfig, Config, EndpointConfig,
+from halgate.config import (BudgetLimits, BudgetsConfig, Config, EndpointConfig,
                             LLMConfig)
-from harness.dispatch import (
+from halgate.dispatch import (
     dispatch_parallel,
     ApprovalResult,
     AUTO_APPROVE,
 )
-from harness.llm.client import ToolCall
-from harness.scope import Engagement, ScopeGate, ScopePackage
-from harness.errors import BudgetExhaustedError
-from harness.budget import BudgetManager
-from harness.tools.registry import ToolRegistry
+from halgate.llm.client import ToolCall
+from halgate.scope import Engagement, ScopeGate, ScopePackage
+from halgate.errors import BudgetExhaustedError
+from halgate.budget import BudgetManager
+from halgate.tools.registry import ToolRegistry
 
 
 class NoopRedactor:
@@ -82,7 +82,7 @@ def setup(tmp_path):
         llm=LLMConfig(active="t", endpoints=[
             EndpointConfig(id="t", base_url="x", model="m")]),
         safety=Config.safety if hasattr(Config, 'safety') else __import__(
-            'harness.config', fromlist=['SafetyConfig']).SafetyConfig(
+            'halgate.config', fromlist=['SafetyConfig']).SafetyConfig(
             dry_run=False),
     )
     audit = FakeAudit()
@@ -199,12 +199,12 @@ async def test_budget_exhaustion(setup):
     executor = setup["executor"]
     cfg = setup["cfg"]
     # Budget with max_actions=1
-    from harness.config import BudgetsConfig, BudgetLimits
+    from halgate.config import BudgetsConfig, BudgetLimits
     budget_mgr = BudgetManager(
         BudgetsConfig(default=BudgetLimits(max_actions=1)), [eng])
     budget_mgr.try_reserve("eng1", "max_actions", 1)
     budget_mgr.settle(budget_mgr._states["eng1"].reserved and
-        __import__("harness.budget", fromlist=["BudgetReservation"]
+        __import__("halgate.budget", fromlist=["BudgetReservation"]
         ).BudgetReservation("eng1", "max_actions", 1))
     # Now reserve again -> should exhaust
     tc = ToolCall(id="1", name="shell",

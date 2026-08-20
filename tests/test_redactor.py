@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from harness.errors import GpgError
-from harness.guardrails.redactor import Redactor, contains_secret
-from harness.memory.keystore import KeyStore
+from halgate.errors import GpgError
+from halgate.guardrails.redactor import Redactor, contains_secret
+from halgate.memory.keystore import KeyStore
 
 AWS_KEY = "AKIAIOSFODNN7EXAMPLE"
 

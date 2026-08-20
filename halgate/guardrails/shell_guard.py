@@ -149,7 +149,7 @@ class ShellGuard:
     async def execute_in_mode(self, cmd: str, timeout: int | None = None,
                               execution_mode: str = "host",
                               container_runtime: str = "podman",
-                              container_image: str = "localhost/harness:latest",
+                              container_image: str = "localhost/halgate:latest",
                               mount_dir: str | None = None) -> ShellResult:
         """Execute a checked command on the host or in an ephemeral container.
 

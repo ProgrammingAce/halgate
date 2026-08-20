@@ -1,8 +1,8 @@
 """Tests for MemoryStore.edit (edit-as-replace)."""
 import pytest
 
-from harness.config import MemoryConfig
-from harness.memory.store import MemoryStore
+from halgate.config import MemoryConfig
+from halgate.memory.store import MemoryStore
 
 
 @pytest.fixture

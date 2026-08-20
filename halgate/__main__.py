@@ -3,7 +3,7 @@ import sys
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from harness.cli import main
+    from halgate.cli import main
 else:
     from .cli import main
 

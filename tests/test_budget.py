@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import pytest
 
-from harness.budget import BudgetManager
-from harness.config import BudgetLimits, BudgetsConfig
-from harness.errors import BudgetExhaustedError
-from harness.scope import Engagement
+from halgate.budget import BudgetManager
+from halgate.config import BudgetLimits, BudgetsConfig
+from halgate.errors import BudgetExhaustedError
+from halgate.scope import Engagement
 
 
 def make_manager(limits, overrides=None):

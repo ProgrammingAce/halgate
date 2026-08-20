@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from harness.tools import auth_session, data, http_session
+from halgate.tools import auth_session, data, http_session
 
 
 @pytest.mark.asyncio

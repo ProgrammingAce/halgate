@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# In-container root for the harness state dirs (.harness_* live here, since
+# In-container root for the harness state dirs (.halgate_* live here, since
 # config defaults are CWD-relative). Override at build:
 #   docker build --build-arg HALGATE_DATA_DIR=/data ...
 # and keep HALGATE_DATA_DIR in docker-compose.yml in sync.
@@ -21,11 +21,11 @@ RUN groupadd -g 1000 ${HALGATE_USER} \
     && useradd -u 1000 -g 1000 -m -d /home/${HALGATE_USER} ${HALGATE_USER} \
     && mkdir -p ${HALGATE_DATA_DIR} \
     # Placeholder config/package tree: the app falls back to
-    # ~/.config/harness/ after CWD. File mounts land here (never inside the
+    # ~/.config/halgate/ after CWD. File mounts land here (never inside the
     # state volume), so runtime creation stays in the container's own layer.
-    && mkdir -p /home/${HALGATE_USER}/.config/harness \
-    && touch /home/${HALGATE_USER}/.config/harness/config.yaml \
-             /home/${HALGATE_USER}/.config/harness/scope_packages.yaml \
+    && mkdir -p /home/${HALGATE_USER}/.config/halgate \
+    && touch /home/${HALGATE_USER}/.config/halgate/config.yaml \
+             /home/${HALGATE_USER}/.config/halgate/scope_packages.yaml \
     && chown -R 1000:1000 ${HALGATE_DATA_DIR} /home/${HALGATE_USER}
 
 # Core assessment/CLI tooling the harness expects. The shell tool executes
@@ -44,11 +44,11 @@ RUN apt-get update \
 # instead of the whole filesystem.
 WORKDIR /src
 COPY pyproject.toml README.md LICENSE requirements.txt scope_packages.yaml ./
-COPY harness/ harness/
+COPY halgate/ halgate/
 RUN pip install --no-cache .
 
 ENV HOME=/home/${HALGATE_USER}
 USER ${HALGATE_USER}
 WORKDIR ${HALGATE_DATA_DIR}
 
-CMD ["harness", "tui"]
+CMD ["halgate", "tui"]

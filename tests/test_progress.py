@@ -1,7 +1,7 @@
 """Tests for progress-aware multi-step workflow protection."""
 from types import SimpleNamespace
 
-from harness.progress import ProgressController
+from halgate.progress import ProgressController
 
 
 def _controller(**overrides):

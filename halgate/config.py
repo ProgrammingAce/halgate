@@ -79,7 +79,7 @@ class ScopeConfig(BaseModel):
 
 
 class MemoryConfig(BaseModel):
-    dir: str = ".harness_memory"
+    dir: str = ".halgate_memory"
     max_entries: int = 200
     max_text_chars: int = 500
     recall_limit: int = 10
@@ -126,7 +126,7 @@ class BudgetsConfig(BaseModel):
 
 
 class AuditConfig(BaseModel):
-    dir: str = ".harness_audit"
+    dir: str = ".halgate_audit"
     rotate_bytes: int = 52428800
     gpg_recipient: str = ""
     gpg_homedir: str | None = None
@@ -149,11 +149,11 @@ class AuditConfig(BaseModel):
 
 
 class SessionsConfig(BaseModel):
-    dir: str = ".harness_sessions"
+    dir: str = ".halgate_sessions"
 
 
 class EvidenceConfig(BaseModel):
-    dir: str = ".harness_evidence"
+    dir: str = ".halgate_evidence"
     max_artifact_bytes: int = 52428800
     retention_days: int = 90
 
@@ -165,7 +165,7 @@ class ProcessConfig(BaseModel):
     # them; visible scrollback is independently bounded by the TUI.
     pane_buffer_bytes: int = 8388608
     container_runtime: str = "podman"
-    container_image: str = "localhost/harness:latest"
+    container_image: str = "localhost/halgate:latest"
 
 
 class CallbackConfig(BaseModel):
@@ -234,7 +234,7 @@ def _find_default_packages(config_path: Path | None) -> Path | None:
         candidate = config_path.parent / "scope_packages.yaml"
         if candidate.exists():
             return candidate
-    for base in (Path.cwd(), Path.home() / ".config" / "harness"):
+    for base in (Path.home() / ".config" / "halgate", Path.cwd()):
         candidate = base / "scope_packages.yaml"
         if candidate.exists():
             return candidate
@@ -246,8 +246,8 @@ def _find_default_packages(config_path: Path | None) -> Path | None:
 
 
 DEFAULT_CONFIG_CANDIDATES = (
+    str(Path.home() / ".config" / "halgate" / "config.yaml"),
     "config.yaml",
-    str(Path.home() / ".config" / "harness" / "config.yaml"),
 )
 
 
@@ -255,8 +255,9 @@ def load_config(path: str | Path | None = None,
                 packages_path: str | Path | None = None) -> Config:
     """Load YAML config, expand ${ENV_VAR} references, validate with pydantic.
 
-    Resolution order for `path`: explicit argument, then ./config.yaml, then
-    ~/.config/harness/config.yaml. Missing file => built-in defaults.
+    Resolution order for `path`: explicit argument, then
+    ~/.config/halgate/config.yaml, then ./config.yaml (current directory).
+    Missing file => built-in defaults.
     """
     resolved: Path | None = None
     if path is not None:

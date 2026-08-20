@@ -22,10 +22,10 @@ dev = [
 ]
 
 [project.scripts]
-harness = "harness.cli:main"
+halgate = "halgate.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["harness*"]
+    include = ["halgate*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

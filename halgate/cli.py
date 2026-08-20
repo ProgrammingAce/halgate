@@ -17,8 +17,8 @@ BANNER = "halgate security harness"
 
 def _make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="harness",
-        description="Single-operator local security-research AI harness.")
+        prog="halgate",
+        description="Single-operator local security-research AI halgate.")
     sub = p.add_subparsers(dest="command")
 
     # top-level subcommands (stored for nested sub-commands)
@@ -147,7 +147,7 @@ def main() -> int:
         return _handle_subcommand(args, config)
 
     # main / tui / run: start a session
-    from .harness import Harness
+    from .halgate import Halgate
     from .instance import instance_id
 
     restored = None
@@ -161,7 +161,7 @@ def main() -> int:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return 1
     engagements = list(restored.engagements) if restored else _parse_engagements(args, config)
-    h = Harness(config, engagements,
+    h = Halgate(config, engagements,
                 session_id=restored.session_id if restored else None,
                 instance_id=instance_id(), resumed=bool(restored))
 
@@ -173,8 +173,8 @@ def main() -> int:
 
     if not args.no_tui and has_tty():
         if args.command == "tui" or os.environ.get("TERM"):
-            from .tui import HarnessApp
-            app = HarnessApp(h)
+            from .tui import HalgateApp
+            app = HalgateApp(h)
             app.run()
             return 0
 

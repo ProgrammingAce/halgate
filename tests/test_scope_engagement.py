@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from harness.errors import ScopeError
-from harness.scope import Engagement
+from halgate.errors import ScopeError
+from halgate.scope import Engagement
 
 
 def test_invalid_execution_mode_rejected():

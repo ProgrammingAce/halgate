@@ -1,8 +1,8 @@
 """Crypto backends must not be required to start a non-forensic session."""
 from __future__ import annotations
 
-from harness.audit.logger import AuditLogger
-from harness.memory.keystore import KeyStore
+from halgate.audit.logger import AuditLogger
+from halgate.memory.keystore import KeyStore
 
 
 def test_disabled_forensics_does_not_resolve_gpg_at_startup(config, instance_id):

@@ -4,10 +4,10 @@ import json
 
 import pytest
 
-from harness.config import EvidenceConfig
-from harness.evidence.store import EvidenceStore
-from harness.evidence.findings import FindingStore
-from harness.evidence.inventory import InventoryStore
+from halgate.config import EvidenceConfig
+from halgate.evidence.store import EvidenceStore
+from halgate.evidence.findings import FindingStore
+from halgate.evidence.inventory import InventoryStore
 
 
 class TestEvidenceStore:

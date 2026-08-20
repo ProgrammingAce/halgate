@@ -1,7 +1,7 @@
 """ContextTracker accounting."""
 from __future__ import annotations
 
-from harness.tracker import ContextTracker, LifetimeTokenCounter, TokenUsage
+from halgate.tracker import ContextTracker, LifetimeTokenCounter, TokenUsage
 
 
 def test_record_and_pct():

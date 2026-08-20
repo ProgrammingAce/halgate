@@ -1,8 +1,8 @@
-# Harness runtime state (may contain assessment data, session history, and audit records)
-.harness_audit/
-.harness_evidence/
-.harness_memory/
-.harness_sessions/
+# Halgate runtime state (may contain assessment data, session history, and audit records)
+.halgate_audit/
+.halgate_evidence/
+.halgate_memory/
+.halgate_sessions/
 
 # Python environments, caches, and build metadata
 .venv/
