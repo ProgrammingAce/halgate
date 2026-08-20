@@ -33,16 +33,6 @@ AUTO_APPROVE = frozenset({
     "read_callback_endpoint",
 })
 
-APPROVAL_REQUIRED = frozenset({
-    "write_file", "shell", "http", "http_replay", "http_session", "auth_session", "multipart_upload",
-    "websocket", "tcp_probe", "scan",
-    "jwt_sign",
-    "request_callback_endpoint",
-    "pane_write",
-    "memory_forget", "memory_edit",
-})
-
-
 @dataclass
 class ApprovalResult:
     approved: bool

@@ -78,24 +78,15 @@ class ScopeConfig(BaseModel):
     overrides: dict[str, bool] = Field(default_factory=dict)
 
 
-class ConsolidationConfig(BaseModel):
-    min_dirty: int = 8
-    idle_seconds: float = 90.0
-    max_dirty: int = 30
-    poll_seconds: float = 15.0
-
-
 class MemoryConfig(BaseModel):
     dir: str = ".harness_memory"
     max_entries: int = 200
     max_text_chars: int = 500
-    short_term_keep: int = 40
     recall_limit: int = 10
     prompt_budget_tokens: int = 1000
     dup_similarity: float = 0.5
     recency_halflife_days: float = 14.0
     inferred_daily_cap: int = 12
-    consolidation: ConsolidationConfig = Field(default_factory=ConsolidationConfig)
 
 
 class ShellConfig(BaseModel):

@@ -15,10 +15,10 @@ class _SummaryClient:
                 tool_calls=[ToolCall(
                     id="recall", name="memory_recall",
                     arguments={"engagement_id": "eng1", "query": ""})],
-                usage=TokenUsage(10, 5, 15)),
-            Completion(content="", tool_calls=[], usage=TokenUsage(12, 4, 16)),
+                usage=TokenUsage(10, 5)),
+            Completion(content="", tool_calls=[], usage=TokenUsage(12, 4)),
             Completion(content="Summary of completed tool work.", tool_calls=[],
-                       usage=TokenUsage(14, 8, 22)),
+                       usage=TokenUsage(14, 8)),
         ]
 
     async def stream_complete(self, messages, tools, on_delta):
@@ -37,12 +37,12 @@ class _CompactionClient:
     async def complete(self, messages, tools=None):
         self.compaction_messages.append(messages)
         return Completion(content="Earlier target state summarized.", tool_calls=[],
-                          usage=TokenUsage(10, 5, 15))
+                          usage=TokenUsage(10, 5))
 
     async def stream_complete(self, messages, tools, on_delta):
         self.stream_messages.append(messages)
         return Completion(content="Done.", tool_calls=[],
-                          usage=TokenUsage(12, 4, 16))
+                          usage=TokenUsage(12, 4))
 
     async def close(self):
         pass
@@ -53,7 +53,7 @@ async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config)
     engagement = Engagement("eng1", "target", "192.168.4.10", "defensive")
     harness = Harness(config, [engagement])
     client = _SummaryClient()
-    harness.router._clients[harness.router.active_id] = client
+    harness.router._clients[harness.router.active_endpoint.id] = client
 
     result = await harness.run("Inspect the target")
 
@@ -68,7 +68,7 @@ async def test_empty_post_tool_response_triggers_explicit_summary_prompt(config)
 async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
     harness = Harness(config, [])
     client = _CompactionClient()
-    harness.router._clients[harness.router.active_id] = client
+    harness.router._clients[harness.router.active_endpoint.id] = client
     harness.messages = [
         {"role": "user", "content": "Inspect the target."},
         {"role": "assistant", "content": "Beginning inspection."},
@@ -91,7 +91,7 @@ async def test_compaction_keeps_the_system_prompt_first_and_unique(config):
 async def test_compaction_uses_structured_source_aware_history(config):
     harness = Harness(config, [])
     client = _CompactionClient()
-    harness.router._clients[harness.router.active_id] = client
+    harness.router._clients[harness.router.active_endpoint.id] = client
     harness.messages = [
         {"role": "assistant", "content": None, "tool_calls": [{
             "id": "source-1", "type": "function", "function": {

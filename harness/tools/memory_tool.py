@@ -74,7 +74,7 @@ EDIT_SCHEMA = {
 
 PIN_SCHEMA = {
     "name": "memory_pin",
-    "description": "Pin a memory so it survives consolidation.",
+    "description": "Pin a memory so it keeps top priority across edits.",
     "parameters": {
         "type": "object",
         "properties": {

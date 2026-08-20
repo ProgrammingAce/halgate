@@ -1,4 +1,4 @@
-"""LLMRouter: endpoint selection and hot-swap (clients are lazily created)."""
+"""LLMRouter: endpoint selection (clients are lazily created)."""
 from __future__ import annotations
 
 from ..config import Config, EndpointConfig
@@ -28,15 +28,6 @@ class LLMRouter:
     @property
     def active_endpoint(self) -> EndpointConfig:
         return self._config.llm.get_endpoint(self._active_id)
-
-    @property
-    def active_id(self) -> str:
-        return self._active_id
-
-    def switch(self, endpoint_id: str) -> None:
-        if endpoint_id not in self._config.llm.endpoints_by_id:
-            raise ValueError(f"unknown endpoint: {endpoint_id}")
-        self._active_id = endpoint_id
 
     async def reload(self, endpoint_id: str | None = None) -> None:
         """Discard a cached client after its endpoint settings change."""

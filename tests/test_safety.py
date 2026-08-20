@@ -1,5 +1,4 @@
-"""Tests for SafetyController: panic stop, task cancellation, resume."""
-import asyncio
+"""Tests for SafetyController: panic stop and resume."""
 import pytest
 
 from harness.config import SafetyConfig
@@ -49,7 +48,7 @@ def cfg():
 class TestStopped:
     def test_initially_not_stopped(self, cfg, pmgr, audit):
         safety = SafetyController(cfg, pmgr, audit)
-        assert not safety.stopped
+        safety.raise_if_stopped()  # no exception
 
     def test_raise_if_stopped(self, cfg, pmgr, audit):
         safety = SafetyController(cfg, pmgr, audit)
@@ -61,51 +60,18 @@ class TestStopped:
         safety = SafetyController(cfg, pmgr, audit)
         safety._stopped = True
         safety.resume_actions()
-        assert not safety.stopped
         # Should no longer raise
         safety.raise_if_stopped()  # no exception
 
 
-class TestTrack:
-    def test_track_and_untrack(self, cfg, pmgr, audit):
-        safety = SafetyController(cfg, pmgr, audit)
-        async def _run():
-            task = asyncio.create_task(asyncio.sleep(0.1))
-            safety.track(task)
-            assert task in safety._tasks
-            safety.untrack(task)
-            assert task not in safety._tasks
-            await task
-        import asyncio
-        asyncio.run(_run())
-
-    def test_done_callback_auto_removes(self, cfg, pmgr, audit):
-        safety = SafetyController(cfg, pmgr, audit)
-        async def _run():
-            async def quick():
-                return 42
-            task = safety.track(asyncio.create_task(quick()))
-            result = await task
-            assert result == 42
-            # After done, task should be removed from _tasks
-            assert task not in safety._tasks
-        import asyncio
-        asyncio.run(_run())
-
-
 class TestPanic:
     @pytest.mark.asyncio
-    async def test_panic_cancels_tasks(self, cfg, pmgr, audit):
+    async def test_panic_locks_actions(self, cfg, pmgr, audit):
         safety = SafetyController(cfg, pmgr, audit)
-        # Start a slow task
-        task = asyncio.create_task(asyncio.sleep(10))
-        safety.track(task)
-        await asyncio.sleep(0.05)  # let it run
         outcome = await safety.panic()
         assert outcome["panicked"] is True
-        assert safety.stopped
-        # Task should have been cancelled
-        assert task.cancelled() or task.done()
+        with pytest.raises(StoppedError):
+            safety.raise_if_stopped()
 
     @pytest.mark.asyncio
     async def test_panic_kills_panes(self, cfg, pmgr, audit):
@@ -145,20 +111,3 @@ class TestPanic:
         await safety.panic()
         assert len(audit.panics) == 1
         assert audit.panics[0]["panicked"] is True
-
-    @pytest.mark.asyncio
-    async def test_panic_with_cancelled_tasks(self, cfg, pmgr, audit):
-        safety = SafetyController(cfg, pmgr, audit)
-        async def slow():
-            await asyncio.sleep(10)
-        safety.track(asyncio.create_task(slow()))
-        await asyncio.sleep(0.05)
-        outcome = await safety.panic()
-        assert outcome["cancelled_tasks"] >= 1
-
-    @pytest.mark.asyncio
-    async def test_require_not_stopped(self, cfg, pmgr, audit):
-        safety = SafetyController(cfg, pmgr, audit)
-        safety._stopped = True
-        with pytest.raises(StoppedError):
-            safety.require_not_stopped_for_action()

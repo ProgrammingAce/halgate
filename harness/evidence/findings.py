@@ -59,20 +59,6 @@ class FindingStore:
             f.write(json.dumps(finding, separators=(",", ":")) + "\n")
         return finding
 
-    def update_status(self, fid: str, status: str) -> dict | None:
-        if status not in VALID_STATUSES:
-            raise ValueError(f"invalid status: {status}")
-        entries = self.list_all()
-        for i, e in enumerate(entries):
-            if e.get("id") == fid:
-                e["status"] = status
-                e["updated"] = _now_iso()
-                with self._path.open("w") as f:
-                    for entry in entries:
-                        f.write(json.dumps(entry, separators=(",", ":")) + "\n")
-                return e
-        return None
-
     def list_all(self, status: str | None = None) -> list[dict]:
         entries: list[dict] = []
         if not self._path.exists():

@@ -105,11 +105,8 @@ async def test_active_count(pm):
 
 
 @pytest.mark.asyncio
-async def test_stderr_capture(pm):
+async def test_stderr_is_discarded(pm):
     pane = await pm.spawn("errtest", ["/bin/sh", "-c",
                                       "echo err >&2; echo out"])
     output = await pm.read(pane.id, timeout=3.0)
-    await asyncio.sleep(0.1)
-    err = await pm.read_stderr(pane.id, timeout=1.0)
     assert "out" in output
-    assert "err" in err

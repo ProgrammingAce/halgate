@@ -33,7 +33,6 @@ class ToolCall:
 class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    total_tokens: int = 0
 
 
 @dataclass
@@ -109,7 +108,6 @@ class OpenAIClient:
                     usage = TokenUsage(
                         prompt_tokens=int(usage_data.get("prompt_tokens", 0)),
                         completion_tokens=int(usage_data.get("completion_tokens", 0)),
-                        total_tokens=int(usage_data.get("total_tokens", 0)),
                     )
                 for choice in chunk.get("choices") or []:
                     delta = choice.get("delta") or {}
@@ -160,7 +158,6 @@ class OpenAIClient:
         usage = TokenUsage(
             prompt_tokens=int(usage_data.get("prompt_tokens", 0)),
             completion_tokens=int(usage_data.get("completion_tokens", 0)),
-            total_tokens=int(usage_data.get("total_tokens", 0)),
         )
         return Completion(
             content=msg.get("content") or "",

@@ -6,7 +6,7 @@ Invariants:
 - deletion is by time-scoped tombstones, never by rewriting other shards
 - "edit-as-replace": new entry + tombstone of the old id
 - content-hash ids (SHA-1 of text, namespaced by subject)
-- pinned facts are immortal (consolidation re-injects them)
+- pinned facts rank first and keep their pin state across edits
 """
 from __future__ import annotations
 
@@ -152,17 +152,6 @@ class MemoryStore:
         return (bool(e.get("pinned")), e.get("confidence", 0),
                 len(e.get("text", "")), e.get("ts", ""))
 
-    def read_short_term(self) -> list[dict]:
-        tombstones = self._read_tombstones()
-        out = []
-        for obj in self._read_lines("short_term"):
-            mid = obj.get("id")
-            if mid and tombstones.get(mid, "") and \
-                    obj.get("ts", "") <= tombstones[mid]:
-                continue
-            out.append(obj)
-        return out
-
     # -- internals ----------------------------------------------------------
 
     def _mem_id(self, text: str, subject: str = "target") -> str:
@@ -195,15 +184,6 @@ class MemoryStore:
         ts = _now_iso()
         for mid in sorted(ids):
             self._append("tombstones", {"id": mid, "ts": ts})
-
-    def _remove_tombstone(self, ids: set[str]) -> None:
-        """Lift (rewrite only this instance's shard) tombstones for ids."""
-        objs = [o for o in self._read_lines("tombstones")
-                if o.get("id") not in ids]
-        if objs:
-            self._rewrite("tombstones", objs)
-        else:
-            self._rewrite("tombstones", [])
 
     # -- operations ----------------------------------------------------------
 
@@ -378,13 +358,3 @@ class MemoryStore:
 
     def count(self) -> int:
         return len(self.read_long_term())
-
-    def trim_short_term(self, keep: int | None = None) -> None:
-        keep = keep or self._cfg.short_term_keep
-        entries = self.read_short_term()
-        if len(entries) <= keep:
-            return
-        # rewriting is only safe on THIS instance's shard; union trim is
-        # approximated by rewriting our shard to its last `keep` entries.
-        mine = [o for o in self._read_lines("short_term")]
-        self._rewrite("short_term", mine[-keep:] if keep > 0 else [])

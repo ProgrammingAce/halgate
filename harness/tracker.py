@@ -10,7 +10,6 @@ from pathlib import Path
 class TokenUsage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
-    total_tokens: int = 0
 
 
 class ContextTracker:
@@ -31,11 +30,6 @@ class ContextTracker:
 
     def current_pct(self) -> float:
         return (self._current_window / self.budget) * 100.0 if self.budget else 0.0
-
-    @property
-    def total_tokens(self) -> int:
-        """All tokens sent to and received from the model this session."""
-        return self.total_prompt_tokens + self.total_completion_tokens
 
     def status_line(self) -> str:
         pct = self.current_pct()

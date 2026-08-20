@@ -1,4 +1,4 @@
-"""Tests for EvidenceStore, FindingStore, InventoryStore, and importers."""
+"""Tests for EvidenceStore, FindingStore, and InventoryStore."""
 import hashlib
 import json
 
@@ -8,13 +8,6 @@ from harness.config import EvidenceConfig
 from harness.evidence.store import EvidenceStore
 from harness.evidence.findings import FindingStore
 from harness.evidence.inventory import InventoryStore
-from harness.evidence.importers import (
-    import_nmap_xml,
-    import_nuclei_jsonl,
-    import_burp,
-    import_sarif,
-    IMPORTERS,
-)
 
 
 class TestEvidenceStore:
@@ -111,21 +104,10 @@ class TestFindingStore:
         assert f1["id"] == "find-0001"
         assert f2["id"] == "find-0002"
 
-    def test_update_status(self, env):
-        _, fs = env
-        f = fs.add("t", "high", "d", ["ref"])
-        updated = fs.update_status(f["id"], "confirmed")
-        assert updated["status"] == "confirmed"
-
-    def test_update_status_missing(self, env):
-        _, fs = env
-        assert fs.update_status("find-9999", "confirmed") is None
-
     def test_list_all_filter(self, env):
         _, fs = env
-        f1 = fs.add("a", "high", "d", ["r"])
+        fs.add("a", "high", "d", ["r"], status="confirmed")
         fs.add("b", "low", "d", ["r"])
-        fs.update_status(f1["id"], "confirmed")
         assert len(fs.list_all(status="confirmed")) == 1
         assert len(fs.list_all(status="open")) == 1
 
@@ -185,83 +167,3 @@ class TestInventoryStore:
     def test_current_total(self, inv):
         inv.upsert_asset("eng1", "x", addr="x")
         assert inv.diff("eng1")["total"] == 1
-
-
-class TestImportNmap:
-    @pytest.fixture
-    def env(self, tmp_path):
-        cfg = EvidenceConfig(dir=str(tmp_path / "ev"))
-        ev = EvidenceStore(cfg, "sess")
-        inv = InventoryStore(tmp_path, "sess")
-        fs = FindingStore(ev, "sess")
-        return ev, inv, fs
-
-    def test_import_nmap(self, env, tmp_path):
-        ev, inv, fs = env
-        xml_str = (
-            '<?xml version="1.0"?>'
-            '<nmaprun><host>'
-            '<address addr="10.0.0.1" addrtype="ipv4"/>'
-            '<status state="up"/>'
-            '<ports><port portid="80" proto="tcp">'
-            '<state state="open"/>'
-            '</port></ports></host></nmaprun>'
-        )
-        f = tmp_path / "scan.xml"
-        f.write_text(xml_str)
-        result = import_nmap_xml(ev, inv, fs, str(f), "eng1")
-        assert result["imported"] is True
-        assert result["hosts"] == 1
-        assert result["hosts_detail"][0]["addr"] == "10.0.0.1"
-
-    def test_import_nmap_missing(self, env):
-        ev, inv, fs = env
-        result = import_nmap_xml(ev, inv, fs, "/nonexistent.xml", "eng1")
-        assert "error" in result
-
-
-class TestImportNuclei:
-    def test_import_nuclei(self, tmp_path):
-        cfg = EvidenceConfig(dir=str(tmp_path / "ev"))
-        ev = EvidenceStore(cfg, "sess")
-        inv = InventoryStore(tmp_path, "sess")
-        fs = FindingStore(ev, "sess")
-        jsonl = tmp_path / "nuclei.jsonl"
-        jsonl.write_text(
-            json.dumps({"host": "10.0.0.1", "template": "xss"}) + "\n"
-        )
-        result = import_nuclei_jsonl(ev, inv, fs, str(jsonl), "eng1")
-        assert result["imported"] is True
-        assert result["entries"] == 1
-
-
-class TestImportBurp:
-    def test_import_burp_json(self, tmp_path):
-        cfg = EvidenceConfig(dir=str(tmp_path / "ev"))
-        ev = EvidenceStore(cfg, "sess")
-        inv = InventoryStore(tmp_path, "sess")
-        fs = FindingStore(ev, "sess")
-        f = tmp_path / "burp.json"
-        f.write_text(json.dumps([{"host": "10.0.0.1", "name": "XSS"}]))
-        result = import_burp(ev, inv, fs, str(f), "eng1")
-        assert result["imported"] is True
-        assert result["issues"] == 1
-
-
-class TestImportSarif:
-    def test_import_sarif(self, tmp_path):
-        cfg = EvidenceConfig(dir=str(tmp_path / "ev"))
-        ev = EvidenceStore(cfg, "sess")
-        inv = InventoryStore(tmp_path, "sess")
-        fs = FindingStore(ev, "sess")
-        f = tmp_path / "report.sarif"
-        sarif = {"runs": [{"results": [{"locations": [
-            {"physicalLocation": {"artifactLocation": {"uri": "/x.py"}}}]}]}]}
-        f.write_text(json.dumps(sarif))
-        result = import_sarif(ev, inv, fs, str(f), "eng1")
-        assert result["imported"] is True
-        assert result["results"] == 1
-
-
-def test_importers_registry():
-    assert set(IMPORTERS.keys()) == {"nmap", "nuclei", "burp", "sarif"}

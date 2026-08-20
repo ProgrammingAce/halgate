@@ -1,4 +1,4 @@
-"""Checkpoint save/load roundtrip, listing, naming."""
+"""Checkpoint save/load roundtrip and listing."""
 from __future__ import annotations
 
 import json
@@ -6,11 +6,7 @@ import json
 import pytest
 
 from harness.scope import Engagement
-from harness.sessions.checkpoint import (
-    SessionCheckpoint,
-    default_session_name,
-    slugify,
-)
+from harness.sessions.checkpoint import SessionCheckpoint
 
 
 def sample_engagements(tmp_path):
@@ -84,16 +80,3 @@ def test_resumed_from_preserved_across_saves(tmp_path):
     restored = SessionCheckpoint.load(str(tmp_path / "s"), "sess-3")
     assert restored.name == "n2"
     assert restored.created if hasattr(restored, "created") else True
-
-
-def test_session_naming():
-    engs = [Engagement(id="e1", label="Payments Svc", target="/x",
-                       package="defensive")]
-    import os
-    os.environ.setdefault("TZ", "UTC")
-    name = default_session_name(engs)
-    parts = name.split("_")
-    assert len(parts) == 3 and len(parts[2]) == 4
-    assert "payments-svc" in name
-    assert default_session_name(engs, override="custom") == "custom"
-    assert slugify("Hello, World!") == "hello-world"

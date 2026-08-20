@@ -67,7 +67,6 @@ async def test_complete_tool_calls():
     assert c.tool_calls[0].name == "shell"
     assert c.tool_calls[0].arguments == {"command": "ls"}
     assert c.finish_reason == "tool_calls"
-    assert c.usage.total_tokens == 30
     await client.close()
 
 
@@ -99,7 +98,6 @@ async def test_complete_dict_arguments():
     })
     c = await client.complete([], tools=[])
     assert c.tool_calls[0].arguments == {"path": "/tmp/x"}
-    assert c.usage.total_tokens == 0
     await client.close()
 
 
@@ -116,25 +114,9 @@ def make_config(endpoints: list[EndpointConfig] | None = None,
 def test_router_active():
     cfg = make_config()
     r = LLMRouter(cfg)
-    assert r.active_id == "ep1"
     assert r.active_endpoint.id == "ep1"
-    assert r.active_endpoint.base_url == "http://a:1/v1"
-
-
-def test_router_switch():
-    cfg = make_config()
-    r = LLMRouter(cfg)
-    r.switch("ep2")
-    assert r.active_id == "ep2"
     assert r.active_endpoint.model == "m"
-    assert r.active_endpoint.api_key == "k2"
-
-
-def test_router_unknown_switch_raises():
-    cfg = make_config()
-    r = LLMRouter(cfg)
-    with pytest.raises(ValueError, match="unknown endpoint"):
-        r.switch("nope")
+    assert r.active_endpoint.base_url == "http://a:1/v1"
 
 
 def test_router_lazy_client():

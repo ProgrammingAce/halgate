@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from harness.dispatch import (
-    APPROVAL_REQUIRED, AUTO_APPROVE, ApprovalResult, dispatch_parallel,
+    AUTO_APPROVE, ApprovalResult, dispatch_parallel,
 )
 from harness.llm.client import ToolCall
 from harness.scope import Engagement, ScopeGate
@@ -74,7 +74,6 @@ async def _dns_query(port: int, name: str) -> bytes:
 
 
 def test_approval_gating_and_schema() -> None:
-    assert "request_callback_endpoint" in APPROVAL_REQUIRED
     assert "request_callback_endpoint" not in AUTO_APPROVE
     assert "read_callback_endpoint" in AUTO_APPROVE
 

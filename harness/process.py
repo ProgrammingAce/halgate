@@ -18,7 +18,6 @@ class Pane:
     cmd: list[str]
     proc: asyncio.subprocess.Process
     stdout_buf: bytes = b""
-    stderr_buf: bytes = b""
     started: str = ""
     exit_code: int | None = None
     truncated: bool = False
@@ -68,7 +67,7 @@ class ProcessManager:
         kwargs: dict[str, Any] = dict(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
             cwd=cwd,
             start_new_session=True,
         )
@@ -78,7 +77,6 @@ class ProcessManager:
                     workdir=cwd, execution_mode=execution_mode)
         self._panes[pane_id] = pane
         asyncio.create_task(self._reader(pane, proc.stdout))
-        asyncio.create_task(self._reader_stderr(pane, proc.stderr))
         return pane
 
     async def write(self, pane_id: str, data: str | bytes) -> None:
@@ -105,17 +103,6 @@ class ProcessManager:
         """Return buffered stdout immediately; intended for UI polling."""
         pane = self._require(pane_id)
         data, pane.stdout_buf = pane.stdout_buf, b""
-        return data.decode(errors="replace")
-
-    async def read_stderr(self, pane_id: str, timeout: float | None = None) -> str:
-        pane = self._require(pane_id)
-        t = timeout or self._config.process.default_read_timeout
-        if not pane.stderr_buf:
-            try:
-                await asyncio.wait_for(self._wait_for_data_err(pane), timeout=t)
-            except asyncio.TimeoutError:
-                pass
-        data, pane.stderr_buf = pane.stderr_buf, b""
         return data.decode(errors="replace")
 
     async def kill(self, pane_id: str) -> Pane:
@@ -183,21 +170,8 @@ class ProcessManager:
             if pane.exit_code is None:
                 pane.exit_code = await pane.proc.wait()
 
-    async def _reader_stderr(self, pane: Pane, stream: asyncio.StreamReader):
-        try:
-            while True:
-                chunk = await stream.read(4096)
-                if not chunk:
-                    break
-                pane.stderr_buf = self._append_bounded(pane, chunk, stderr=True)
-        finally:
-            if pane.exit_code is None:
-                pane.exit_code = await pane.proc.wait()
-
-    def _append_bounded(self, pane: Pane, chunk: bytes,
-                        stderr: bool = False) -> bytes:
-        buf = pane.stderr_buf if stderr else pane.stdout_buf
-        combined = buf + chunk
+    def _append_bounded(self, pane: Pane, chunk: bytes) -> bytes:
+        combined = pane.stdout_buf + chunk
         if len(combined) > self._max_buf:
             combined = combined[-self._max_buf:]
             pane.truncated = True
@@ -205,10 +179,6 @@ class ProcessManager:
 
     async def _wait_for_data(self, pane: Pane) -> None:
         while pane.exit_code is None and not pane.stdout_buf:
-            await asyncio.sleep(0.01)
-
-    async def _wait_for_data_err(self, pane: Pane) -> None:
-        while pane.exit_code is None and not pane.stderr_buf:
             await asyncio.sleep(0.01)
 
     def _require(self, pane_id: str) -> Pane:

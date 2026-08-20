@@ -10,7 +10,7 @@ import pytest
 
 from harness.audit.logger import AuditLogger
 from harness.dispatch import (
-    APPROVAL_REQUIRED, AUTO_APPROVE, ApprovalResult, dispatch_parallel,
+    AUTO_APPROVE, ApprovalResult, dispatch_parallel,
 )
 from harness.guardrails.redactor import Redactor
 from harness.llm.client import ToolCall
@@ -56,7 +56,6 @@ def _signing_package(**overrides) -> ScopePackage:
 
 
 def test_approval_gating_and_closed_schema() -> None:
-    assert "jwt_sign" in APPROVAL_REQUIRED
     assert "jwt_sign" not in AUTO_APPROVE
     props = JWT_SIGN_SCHEMA["parameters"]["properties"]
     assert set(props) == {"credential_ref", "algorithm", "claims", "ttl_seconds",

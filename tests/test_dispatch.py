@@ -7,7 +7,6 @@ from harness.dispatch import (
     dispatch_parallel,
     ApprovalResult,
     AUTO_APPROVE,
-    APPROVAL_REQUIRED,
 )
 from harness.llm.client import ToolCall
 from harness.scope import Engagement, ScopeGate, ScopePackage
@@ -114,7 +113,7 @@ async def test_auto_approve_no_approvers_called(setup):
 
 @pytest.mark.asyncio
 async def test_approval_required_triggers_approvers(setup):
-    """shell (APPROVAL_REQUIRED) must call the approver."""
+    """shell (not in AUTO_APPROVE) must call the approver."""
     gate = setup["gate"]
     audit = setup["audit"]
     executor = setup["executor"]
@@ -334,9 +333,3 @@ def test_auto_approve_set():
     assert "read_file" in AUTO_APPROVE
     assert "glob" in AUTO_APPROVE
     assert "grep" in AUTO_APPROVE
-
-def test_approval_required_set():
-    assert "shell" in APPROVAL_REQUIRED
-    assert "write_file" in APPROVAL_REQUIRED
-    assert "http" in APPROVAL_REQUIRED
-    assert "scan" in APPROVAL_REQUIRED

@@ -1,5 +1,5 @@
 """Tests for security-critical bug fixes: budget mapping, findings seq,
-nmap portid extraction, confidence cap, process session isolation."""
+confidence cap, process session isolation."""
 import inspect
 import os
 import shutil
@@ -20,8 +20,6 @@ from harness.dispatch import (
 from harness.llm.client import ToolCall
 from harness.evidence.findings import FindingStore
 from harness.evidence.store import EvidenceStore
-from harness.evidence.importers import import_nmap_xml
-from harness.evidence.inventory import InventoryStore
 from harness.memory.store import MemoryStore
 from harness.process import ProcessManager
 
@@ -277,76 +275,6 @@ class TestFindingsSeqContinuity:
         fs = FindingStore(ev, "sess1")
         f = fs.add("first", "info", "d", ["r"])
         assert f["id"] == "find-0001"
-
-
-class TestNmapPortidExtraction:
-    """Bug 10: Nmap XML portid is an attribute, not a child element.
-    Old code used port.find('portid') which always returned None."""
-
-    @pytest.fixture
-    def env(self, tmp_path):
-        cfg = EvidenceConfig(dir=str(tmp_path / "ev"))
-        ev = EvidenceStore(cfg, "sess")
-        inv = InventoryStore(tmp_path, "sess")
-        fs = FindingStore(ev, "sess")
-        return ev, inv, fs
-
-    def test_portid_from_attribute(self, env, tmp_path):
-        ev, inv, fs = env
-        xml_str = (
-            '<?xml version="1.0"?>'
-            '<nmaprun><host>'
-            '<address addr="10.0.0.1" addrtype="ipv4"/>'
-            '<status state="up"/>'
-            '<ports>'
-            '<port portid="22" proto="tcp"><state state="open"/></port>'
-            '<port portid="80" proto="tcp"><state state="open"/></port>'
-            '<port portid="443" proto="tcp"><state state="closed"/></port>'
-            '</ports></host></nmaprun>'
-        )
-        f = tmp_path / "scan.xml"
-        f.write_text(xml_str)
-        result = import_nmap_xml(ev, inv, fs, str(f), "eng1")
-        assert result["imported"] is True
-        ports = result["hosts_detail"][0]["ports"]
-        assert ports == ["22", "80", "443"]
-
-    def test_single_port_extracted(self, env, tmp_path):
-        ev, inv, fs = env
-        xml_str = (
-            '<?xml version="1.0"?>'
-            '<nmaprun><host>'
-            '<address addr="192.168.1.1" addrtype="ipv4"/>'
-            '<status state="up"/>'
-            '<ports><port portid="8080" proto="tcp">'
-            '<state state="open"/></port></ports></host></nmaprun>'
-        )
-        f = tmp_path / "single.xml"
-        f.write_text(xml_str)
-        result = import_nmap_xml(ev, inv, fs, str(f), "eng1")
-        assert result["hosts_detail"][0]["ports"] == ["8080"]
-
-    def test_multiple_hosts_all_ports(self, env, tmp_path):
-        ev, inv, fs = env
-        xml_str = (
-            '<?xml version="1.0"?>'
-            '<nmaprun>'
-            '<host><address addr="10.0.0.1"/><status state="up"/>'
-            '<ports><port portid="22" proto="tcp">'
-            '<state state="open"/></port></ports></host>'
-            '<host><address addr="10.0.0.2"/><status state="up"/>'
-            '<ports><port portid="80" proto="tcp">'
-            '<state state="open"/></port>'
-            '<port portid="443" proto="tcp">'
-            '<state state="open"/></port></ports></host>'
-            '</nmaprun>'
-        )
-        f = tmp_path / "multi.xml"
-        f.write_text(xml_str)
-        result = import_nmap_xml(ev, inv, fs, str(f), "eng1")
-        assert result["hosts"] == 2
-        assert result["hosts_detail"][0]["ports"] == ["22"]
-        assert result["hosts_detail"][1]["ports"] == ["80", "443"]
 
 
 class TestConfidenceCap:

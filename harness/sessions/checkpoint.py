@@ -13,11 +13,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
 
 from ..scope import Engagement
 
@@ -32,20 +30,6 @@ class RestoredSession:
     llm_id: str = ""
     resumed_from: str | None = None
     meta: dict = field(default_factory=dict)
-
-
-def slugify(text: str) -> str:
-    text = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return text[:40] or "session"
-
-
-def default_session_name(engagements: list[Engagement], override: str | None = None) -> str:
-    """{YYYY-MM-DD}_{engagement_labels_slug}_{uuid4[:4]}"""
-    if override:
-        return override
-    date = datetime.now().strftime("%Y-%m-%d")
-    labels = slugify("_".join(e.label for e in engagements)) or "unlabeled"
-    return f"{date}_{labels}_{uuid4().hex[:4]}"
 
 
 class SessionCheckpoint:

@@ -70,7 +70,7 @@ class FakeLLM:
         self.calls.append(messages)
         if not self.responses:
             return Completion(content="done", tool_calls=[],
-                              usage=TokenUsage(10, 5, 15), finish_reason="stop")
+                              usage=TokenUsage(10, 5), finish_reason="stop")
         resp = self.responses.pop(0)
         if isinstance(resp, Completion):
             return resp
@@ -81,8 +81,7 @@ class FakeLLM:
             tc.append(
                 type("TC", (), {"id": c[0], "name": c[1], "arguments": c[2]})())
         return Completion(content=resp.get("content", ""), tool_calls=tc,
-                          usage=TokenUsage(resp.get("pt", 10), resp.get("ct", 5),
-                                           resp.get("pt", 10) + resp.get("ct", 5)),
+                          usage=TokenUsage(resp.get("pt", 10), resp.get("ct", 5)),
                           finish_reason=resp.get("finish", "stop"))
 
     async def close(self):
