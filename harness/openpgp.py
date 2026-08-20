@@ -195,7 +195,7 @@ class PGPyBackend:
         except GpgError:
             raise
         except Exception as e:
-            raise GpgError(f"PGPy decryption failed") from e
+            raise GpgError("PGPy decryption failed") from e
         return value.encode() if isinstance(value, str) else bytes(value)
 
     async def verify_recipient(self) -> dict:

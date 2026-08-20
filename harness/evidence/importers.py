@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Any
 
 from .store import EvidenceStore
 from .inventory import InventoryStore
@@ -35,9 +34,7 @@ def import_nmap_xml(evidence: EvidenceStore, inventory: InventoryStore,
             status = state_elem.get("state", "unknown") if state_elem is not None else "unknown"
             ports = []
             for port in host_elem.findall(".//port"):
-                pportid = port.get("portid", "?")
-                pstate = port.find("state")
-                ports.append(pportid)
+                ports.append(port.get("portid", "?"))
             inventory.upsert_asset(
                 engagement_id, hostaddr,
                 addr=hostaddr, services=ports,
@@ -75,7 +72,6 @@ def import_nuclei_jsonl(evidence: EvidenceStore, inventory: InventoryStore,
             entries.append(obj)
     for obj in entries:
         host = obj.get("host", obj.get("input", ""))
-        template = obj.get("template", obj.get("template-url", ""))
         if host:
             inventory.upsert_asset(engagement_id, host, addr=host,
                                    evidence_ref=art_ref)

@@ -1,7 +1,6 @@
 """Ranked, token-budgeted memory block for the system prompt."""
 from __future__ import annotations
 
-import math
 from datetime import datetime
 
 from .store import MemoryStore

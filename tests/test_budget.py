@@ -82,7 +82,6 @@ def test_budget_overrides_per_engagement():
 
 
 def test_runtime_budget():
-    from datetime import timedelta
     bm = make_manager(BudgetLimits(max_runtime_seconds=0))
     state = bm._state("e1")
     state.started -= 5  # pretend 5s elapsed

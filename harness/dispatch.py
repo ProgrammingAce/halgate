@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from .config import Config
@@ -113,14 +113,24 @@ async def dispatch_parallel(
             # Budget check
             reservation = None
             if budgets is not None and engagement is not None:
+                budget_kind = BUDGET_KIND_BY_TOOL.get(
+                    tc.name, _DEFAULT_BUDGET_KIND)
+                budget_event = getattr(audit, "budget_decision", None)
                 try:
                     reservation = budgets.try_reserve(
-                        engagement.id,
-                        BUDGET_KIND_BY_TOOL.get(tc.name, _DEFAULT_BUDGET_KIND), 1)
+                        engagement.id, budget_kind, 1)
+                    if budget_event:
+                        budget_event(engagement.id, True,
+                                     f"reserved 1 {budget_kind}")
                 except BudgetExhaustedError as e:
+                    if budget_event:
+                        budget_event(engagement.id, False, str(e), budget_kind)
                     audit.guard_decision(tc.name, False, str(e))
                     return {"error": str(e)}
                 except (ValueError, Exception) as e:
+                    if budget_event:
+                        budget_event(engagement.id, False,
+                                      f"budget error: {e}", budget_kind)
                     audit.guard_decision(tc.name, False, f"budget error: {e}")
                     return {"error": f"budget error: {e}"}
 

@@ -16,16 +16,14 @@ from urllib.parse import urlsplit
 
 from rich.markdown import Markdown
 from rich.markup import escape
-from textual import work
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.message import Message
 from textual.widgets import (
-    Button, Checkbox, Header, Input, Label, RichLog, Select, Static,
+    Button, Checkbox, Input, RichLog, Select, Static,
     TabbedContent, TabPane, TextArea,
 )
-from textual.reactive import var
 from textual.screen import ModalScreen
 
 from .harness import Harness
@@ -1255,9 +1253,9 @@ class PaneModal(ModalScreen):
 
 
 class SessionsModal(ModalScreen):
-    """Manage saved sessions: press 1-9 to pick a session, then r/e/d.
+    """Manage saved sessions: press 1-9 to pick a session, then r/d.
 
-    r = resume, e = export, d = delete
+    r = resume, d = delete
     """
 
     CSS = """
@@ -1294,7 +1292,6 @@ class SessionsModal(ModalScreen):
         ("up", "move_up", ""),
         ("down", "move_down", ""),
         ("r", "resume", "Resume"),
-        ("e", "export", "Export"),
         ("d", "delete", "Delete"),
     ]
 
@@ -1307,7 +1304,7 @@ class SessionsModal(ModalScreen):
 
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Sessions — 1-9=select  up/down=cursor  r=resume  e=export  d=delete  esc=close",
+            Static("Sessions — 1-9=select  up/down=cursor  r=resume  d=delete  esc=close",
                    classes="sess-header"),
             *[
                 Static(
@@ -1377,13 +1374,6 @@ class SessionsModal(ModalScreen):
             self.post_message(SessionsModal.Resumed(sid))
             self.dismiss()
 
-    def action_export(self) -> None:
-        sid = self._selected_session_id()
-        if sid:
-            self.post_message(SessionsModal.Exported(sid))
-            self.query_one("#sess-status", Static).update(
-                f"  exported: {sid[:12]}…  (session-{''.join(sid[:8])}.json in cwd)")
-
     def action_delete(self) -> None:
         sid = self._selected_session_id()
         if sid:
@@ -1409,11 +1399,6 @@ class SessionsModal(ModalScreen):
             super().__init__()
 
     class Deleted(Message):
-        def __init__(self, session_id: str):
-            self.session_id = session_id
-            super().__init__()
-
-    class Exported(Message):
         def __init__(self, session_id: str):
             self.session_id = session_id
             super().__init__()
@@ -2363,7 +2348,7 @@ class HarnessApp(App):
         self._restore_chat_history()
         asyncio.create_task(self._restore_panes(restored.panes))
         self._chat.add_agent(
-            f"[green]Resumed: " + ", ".join(
+            "[green]Resumed: " + ", ".join(
                 e.label for e in restored.engagements) + "[/green]")
 
     def _open_sessions_modal(self) -> None:
@@ -2413,20 +2398,6 @@ class HarnessApp(App):
                                 msg.session_id)
         self._chat.add_agent(
             f"[green]Session {msg.session_id[:8]}… deleted.[/green]")
-
-    def on_sessions_modal_exported(
-            self, msg: SessionsModal.Exported) -> None:
-        import json
-        from pathlib import Path
-        from .sessions.checkpoint import SessionCheckpoint
-        try:
-            data = SessionCheckpoint.export(self.h.config.sessions.dir,
-                                            msg.session_id)
-            out = Path(f"session-{msg.session_id[:8]}.json")
-            out.write_text(json.dumps(data, indent=2, default=str))
-            self._chat.add_agent(f"[green]Exported to {out}[/green]")
-        except FileNotFoundError:
-            self._chat.add_agent("[red]Session not found.[/red]")
 
     def _sync_panes(self) -> None:
         if self._pane_panel is None:
@@ -2674,6 +2645,7 @@ class HarnessApp(App):
             elif secret_parts and secret_parts[0] == "reveal" and len(secret_parts) > 1:
                 val = await self.h._keystore.reveal(secret_parts[1])
                 if val:
+                    self.h.audit.secret_reveal(secret_parts[1])
                     self._chat.add_agent(f"Revealed (value hidden — "
                                          f"use CLI `harness secret reveal {secret_parts[1]}` to display)")
                 else:

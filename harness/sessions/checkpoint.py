@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -204,28 +203,6 @@ class SessionCheckpoint:
                 shutil.rmtree(d)
                 return True
         return False
-
-    @classmethod
-    def export(cls, sessions_dir: str, session_id: str,
-               out_dir: str = ".") -> str:
-        """Export a session's transcript + metadata to a JSON file."""
-        restored = cls.load(sessions_dir, session_id)
-        data = {
-            "session_id": restored.session_id,
-            "name": restored.name,
-            "engagements": [
-                {"id": e.id, "label": e.label, "target": e.target,
-                 "package": e.package}
-                for e in restored.engagements
-            ],
-            "llm_id": restored.llm_id,
-            "meta": restored.meta,
-            "messages": restored.messages,
-            "panes": restored.panes,
-        }
-        out_path = Path(out_dir) / f"{restored.session_id}.json"
-        out_path.write_text(json.dumps(data, indent=2, default=str))
-        return str(out_path)
 
 
 def _now_iso() -> str:

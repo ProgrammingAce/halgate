@@ -70,8 +70,8 @@ async def handle_auth_session(ctx: ToolContext, url: str, engagement_id: str,
         try:
             parsed_body = json.loads(body)
         except json.JSONDecodeError:
-            return {"error": (f"inject_at requires a JSON body "
-                              f"(got invalid JSON)")}
+            return {"error": ("inject_at requires a JSON body "
+                              "(got invalid JSON)")}
         try:
             replace_json_path(parsed_body, str(inject_at), token_state["value"])
         except (ValueError, KeyError, TypeError) as e:

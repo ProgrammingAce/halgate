@@ -97,7 +97,6 @@ def test_packages_load_read_only_flattened_tools():
 
 
 def test_config_defaults_without_file(tmp_path):
-    cfg = load_config(tmp_path / "nonexistent.yaml" if False else None) if False else None
     # explicit missing path is an error; default resolution uses cwd/config.yaml
     with pytest.raises(ConfigError):
         load_config(tmp_path / "nonexistent.yaml")

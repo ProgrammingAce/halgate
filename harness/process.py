@@ -4,11 +4,11 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from .config import Config, ProcessConfig
+from .config import Config
 
 
 @dataclass

@@ -1,7 +1,7 @@
 """Tests for ShellGuard: deny patterns, allowlist, execution."""
 import pytest
 
-from harness.guardrails.shell_guard import ShellGuard, ShellResult
+from harness.guardrails.shell_guard import ShellGuard
 
 
 @pytest.fixture

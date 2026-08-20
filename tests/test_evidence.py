@@ -1,13 +1,12 @@
 """Tests for EvidenceStore, FindingStore, InventoryStore, and importers."""
 import hashlib
 import json
-import xml.etree.ElementTree as ET
 
 import pytest
 
 from harness.config import EvidenceConfig
 from harness.evidence.store import EvidenceStore
-from harness.evidence.findings import FindingStore, VALID_SEVERITIES, VALID_STATUSES
+from harness.evidence.findings import FindingStore
 from harness.evidence.inventory import InventoryStore
 from harness.evidence.importers import (
     import_nmap_xml,

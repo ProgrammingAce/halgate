@@ -1,7 +1,6 @@
 """Tests for security-critical bug fixes: budget mapping, findings seq,
 nmap portid extraction, confidence cap, process session isolation."""
 import inspect
-import json
 import os
 import shutil
 import subprocess

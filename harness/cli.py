@@ -9,8 +9,8 @@ import re
 import sys
 from pathlib import Path
 
-from .config import load_config, load_packages
-from .errors import ConfigError, HarnessError
+from .config import load_config
+from .errors import ConfigError
 
 BANNER = "halgate security harness"
 
@@ -61,6 +61,10 @@ def _make_parser() -> argparse.ArgumentParser:
     as_.add_argument("session_id")
     as_.add_argument("--event", default=None)
     as_.add_argument("--key", default=None)
+    ad = audit_sp.add_parser("decrypt")
+    ad.add_argument("session_id")
+    ad.add_argument("--seq", type=int, required=True,
+                    help="Audit event sequence number to decrypt")
 
     # memory sub-subcommands
     mem_sp = mem_parser.add_subparsers(dest="memory_cmd")
@@ -143,7 +147,6 @@ def main() -> int:
         return _handle_subcommand(args, config)
 
     # main / tui / run: start a session
-    from .scope import Engagement
     from .harness import Harness
     from .instance import instance_id
 
@@ -222,7 +225,7 @@ def _onboarding_wizard(h) -> None:
     if has_sessions:
         print(f"  [2]  Continue previous session "
               f"(latest: {sessions[0]['name']})")
-        print("  [4]  Manage sessions (delete / export)")
+        print("  [4]  Manage sessions (delete)")
     print("  [3]  Skip for now (add later via /engagement add)")
     print("=" * 50)
 
@@ -270,7 +273,7 @@ def _onboarding_wizard(h) -> None:
             print(f"  [{i}]  {s['name']}")
             print(f"       {engs}")
             print(f"       {s['created'][:19]}  {s['turns']} turns")
-        print(f"       [c]  Cancel")
+        print("       [c]  Cancel")
         sel = input(
             f"Select [1-{min(len(sessions), 5)}/c]: ").strip().lower() or "1"
         if sel in ("c", "cancel", "q", ""):
@@ -300,7 +303,7 @@ def _onboarding_wizard(h) -> None:
             print(f"       {s['created'][:19]}  {s['turns']} turns  "
                   f"id: {s['id']}")
         print()
-        action = input("Action [delete/export, or blank to cancel]: ").strip()
+        action = input("Action [delete, or blank to cancel]: ").strip()
         if not action:
             print("  Cancelled.")
             return
@@ -316,12 +319,6 @@ def _onboarding_wizard(h) -> None:
                         print(f"  Deleted: {sid}")
                     else:
                         print(f"  Not found: {sid}")
-        elif action.startswith("exp"):
-            sel = input("Session number to export: ").strip()
-            if sel.isdigit() and 1 <= int(sel) <= len(sessions[:10]):
-                sid = sessions[int(sel) - 1]["id"]
-                out = SessionCheckpoint.export(h.config.sessions.dir, sid)
-                print(f"  Exported: {out}")
 
     else:
         print("  Skipped. Use /engagement add label:target[:pkg[:host|container]] later.")
@@ -400,13 +397,13 @@ def _handle_command(h, cmd: str) -> bool:
               "/resume-actions /engagement add label:target[:pkg[:host|container]] "
               "/engagement mode <id> <host|container> "
               "/sessions /sessions pick /sessions delete <id> "
-              "/sessions export <id> /resume <id> "
+              "/resume <id> "
               "/quit")
     elif name == "sessions":
         from .sessions.checkpoint import SessionCheckpoint
         sessions = SessionCheckpoint.list_sessions(h.config.sessions.dir)
 
-        # Sub-commands: delete, export
+        # Sub-command: delete
         sub = arg.strip().split(None, 1) if arg.strip() else []
         if sub and sub[0].lower() == "delete":
             sid = sub[1].strip() if len(sub) > 1 else ""
@@ -426,20 +423,6 @@ def _handle_command(h, cmd: str) -> bool:
                     print(f"  Deleted session: {sid}")
                 else:
                     print(f"  Not found: {sid}")
-            return False
-        elif sub and sub[0].lower() == "export":
-            sid = sub[1].strip() if len(sub) > 1 else ""
-            if not sid:
-                print("\nSessions to export:")
-                for i, s in enumerate(sessions[:10], 1):
-                    engs = ", ".join(s.get("engagements", [])) or "no target"
-                    print(f"  [{i}]  {s['name']}  target: {engs}")
-                sel = input("Number: ").strip()
-                if sel.isdigit() and 1 <= int(sel) <= len(sessions[:10]):
-                    sid = sessions[int(sel) - 1]["id"]
-            if sid:
-                out = SessionCheckpoint.export(h.config.sessions.dir, sid)
-                print(f"  Exported: {out}")
             return False
 
         # Default: list + optional pick-to-resume
@@ -464,8 +447,7 @@ def _handle_command(h, cmd: str) -> bool:
                     print(f"  Resumed: {restored.name} "
                           f"({len(restored.messages)} messages, "
                           f"{len(restored.engagements)} engagement(s))")
-            print("  Actions: /sessions pick | /sessions delete <id> "
-                  "| /sessions export <id>")
+            print("  Actions: /sessions pick | /sessions delete <id>")
     elif name == "resume":
         if not arg:
             print("/resume requires a session id. Use /sessions to list.")
@@ -527,7 +509,6 @@ def _handle_command(h, cmd: str) -> bool:
         for p in h.process_mgr.list():
             print(f"  {p['id']} {p['name']:12s} {p['status']:8s} {p['cmd']}")
     elif name == "recall":
-        from .memory.store import MemoryStore
         r = h.memory.recall(query=arg)
         for m in r.get("memories", []):
             print(f"  [{m.get('id')}] ({m.get('confidence'):.0%}) "
@@ -632,7 +613,6 @@ def _handle_command(h, cmd: str) -> bool:
     elif name == "full":
         print(f"(showing full output for call {arg})")
     elif name == "reveal":
-        from .memory.keystore import KeyStore
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
@@ -651,7 +631,6 @@ def _handle_command(h, cmd: str) -> bool:
 
 def _handle_subcommand(args, config) -> int:
     """Handle non-interactive CLI subcommands."""
-    from .audit.replay import replay, verify, search
     from .instance import instance_id
 
     instance = instance_id()
@@ -684,7 +663,8 @@ def _handle_subcommand(args, config) -> int:
 
 
 def _handle_audit(args, config, instance) -> None:
-    from .audit.replay import replay, verify, search, session_log_path
+    from .audit.replay import (decrypt_payload, replay, session_log_path,
+                               search, verify)
     sid = args.session_id
     if not sid:
         print("No session id given for audit command.")
@@ -708,6 +688,17 @@ def _handle_audit(args, config, instance) -> None:
         events = search(log_path, event=args.event or "")
         for e in events:
             print(json.dumps(e, indent=2, default=str))
+    elif args.audit_cmd == "decrypt":
+        from .errors import GpgError
+        from .audit.logger import AuditLogger
+        audit_log = AuditLogger(config.audit, sid, instance)
+        try:
+            plaintext = asyncio.run(decrypt_payload(
+                log_path, config.audit, instance, sid, args.seq, audit_log))
+        except GpgError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return
+        print(plaintext)
 
 
 def _handle_memory(args, config, instance) -> None:

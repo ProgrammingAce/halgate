@@ -38,9 +38,6 @@ class BudgetState:
     def current(self, kind: str) -> int:
         return self.taken.get(kind, 0) + self.reserved.get(kind, 0)
 
-    def start_time(self) -> float:
-        return self.started
-
 
 class BudgetManager:
     def __init__(self, budgets: BudgetsConfig, engagements: list[Engagement]):

@@ -162,12 +162,6 @@ class KeyStore:
     def list(self) -> list[dict]:
         return self.known_ids()
 
-    def rewrap(self, new_recipient: str) -> int:
-        """Operator-only recipient rotation. Requires local decryption
-        capability; audit counts/fingerprints only, never values."""
-        raise NotImplementedError("rewrap requires interactive local agent; "
-                                  "use `harness secret rotate-recipient`")
-
 
 def _now_iso() -> str:
     from datetime import datetime

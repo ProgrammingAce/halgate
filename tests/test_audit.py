@@ -136,3 +136,48 @@ def test_forensic_failure_does_not_consume_audit_sequence(logger, monkeypatch):
     monkeypatch.setattr(logger, "_encrypt_forensic_payload", original)
     logger.user_input("clean")
     assert logger.last_entry()["seq"] == 1
+
+
+def test_decrypt_payload_round_trip_and_audit_event(logger, config, instance_id):
+    import asyncio
+    from harness.audit.replay import decrypt_payload
+    logger.session_start([], "llm", resumed=False)
+    raw_text = "token: " + AWS_KEY
+    logger.user_input("redacted", raw=raw_text)  # forensic payload at seq 2
+    out = asyncio.run(decrypt_payload(
+        logger.path, config.audit, instance_id, "sess-audit-1", 2, logger))
+    assert AWS_KEY in out
+    # Decrypting is itself audited as a secret_reveal access event
+    reveal = [e for e in replay.load_events(logger.path)
+              if e["event"] == "secret_reveal"]
+    assert len(reveal) == 1
+    assert reveal[0]["payload"]["cred_id"] == "seq:2"
+    ok, _, msg = verify_chain(logger.path)
+    assert ok, msg
+
+
+def test_decrypt_payload_missing_seq_raises(logger, config, instance_id):
+    import asyncio
+    from harness.audit.replay import decrypt_payload
+    from harness.errors import GpgError
+    logger.session_start([], "llm", resumed=False)
+    with pytest.raises(GpgError):
+        asyncio.run(decrypt_payload(
+            logger.path, config.audit, instance_id, "sess-audit-1", 99, None))
+
+
+def test_cli_audit_decrypt(config, instance_id, capsys):
+    from types import SimpleNamespace
+    from harness.audit.logger import AuditLogger
+    from harness.cli import _handle_audit
+    logger = AuditLogger(config.audit, "sess-cli-1", instance_id)
+    logger.session_start([], "llm", resumed=False)
+    logger.user_input("redacted", raw="token: " + AWS_KEY)
+    args = SimpleNamespace(audit_cmd="decrypt", session_id="sess-cli-1",
+                           seq=2, event=None, key=None)
+    _handle_audit(args, config, instance_id)
+    out = capsys.readouterr().out
+    assert AWS_KEY in out
+    reveal = [e for e in replay.load_events(logger.path)
+              if e["event"] == "secret_reveal"]
+    assert len(reveal) == 1

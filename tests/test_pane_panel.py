@@ -442,7 +442,7 @@ async def test_activity_toggle_buttons_raise_and_lower() -> None:
 @pytest.mark.asyncio
 async def test_context_status_turns_amber_then_red() -> None:
     app = ChatTestApp()
-    async with app.run_test() as pilot:
+    async with app.run_test():
         chat = app.query_one(ChatPanel)
         chat.add_status("ctx: 60/100 (60%)")
         assert chat._status.has_class("ctx-warn")
@@ -530,6 +530,31 @@ async def test_header_buttons_open_help_and_config() -> None:
         await pilot.pause()
         assert not isinstance(app.screen, HelpModal)
         assert isinstance(app.screen, ConfigModal)
+
+
+@pytest.mark.asyncio
+async def test_secret_reveal_is_audited() -> None:
+    revealed: list[str] = []
+
+    class _FakeKeyStore:
+        async def reveal(self, cred_id: str) -> str:
+            return "shhh"
+
+    class _FakeAudit:
+        def secret_reveal(self, cred_id: str) -> None:
+            revealed.append(cred_id)
+
+    harness = _harness_stub(62)
+    harness._keystore = _FakeKeyStore()
+    harness.audit = _FakeAudit()
+    app = HarnessApp(harness)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await app._handle_command("/secret reveal cred_abc123")
+        await pilot.pause()
+
+    assert revealed == ["cred_abc123"]
+    assert "Revealed" in _log_text(app._chat._log)
 
 
 PORT_TABLE = (

@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from .errors import ScopeError
 
@@ -422,24 +422,6 @@ class ScopeGate:
     engagement_id; authorization is computed solely from that engagement and
     its package. Cross-engagement reuse is always denied.
     """
-
-    # Tools that must validate a structured target argument.
-    TARGET_TOOLS = {
-        "read_file": ("path",),
-        "read_source_code": ("path",),
-        "write_file": ("path",),
-        "glob": ("pattern", "path"),
-        "grep": ("path", "pattern"),
-        "http": ("url",),
-        "http_replay": ("url",),
-        "http_session": ("url",),
-        "auth_session": ("url",),
-        "multipart_upload": ("url", "path"),
-        "websocket": ("url",),
-        "tcp_probe": ("host", "port"),
-        "scan": ("targets",),
-        "shell": ("command",),
-    }
 
     def __init__(self, engagements: list[Engagement],
                  packages: dict[str, ScopePackage],

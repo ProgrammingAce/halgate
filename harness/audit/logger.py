@@ -220,32 +220,9 @@ class AuditLogger:
                                       "allowed": allowed, "reason": reason,
                                       "kind": kind})
 
-    def pane_event(self, pane_id: str, action: str, detail: dict,
-                   engagement_id: str | None = None) -> None:
-        self._log("pane_event", {"pane_id": pane_id, "action": action,
-                                 "detail": detail,
-                                 "engagement_id": engagement_id})
-
-    def memory_op(self, op: str, mem_id: str, detail: dict) -> None:
-        self._log("memory_op", {"op": op, "id": mem_id, "detail": detail})
-
     def secret_reveal(self, cred_id: str) -> None:
         # Access event only; plaintext must never be recorded.
         self._log("secret_reveal", {"cred_id": cred_id})
-
-    def secret_store(self, cred_id: str, cred_type: str,
-                    engagement_id: str | None = None) -> None:
-        """An operator stored a secret; record the id and type only."""
-        self._log("secret_store", {"cred_id": cred_id, "type": cred_type,
-                                   "engagement_id": engagement_id})
-
-    def engagement_policy(self, engagement_id: str, action: str,
-                          detail: dict, operator: str = "operator") -> None:
-        """A per-engagement policy was changed (claim extensions, etc.)."""
-        self._log("engagement_policy", {"engagement_id": engagement_id,
-                                        "action": action,
-                                        "detail": detail,
-                                        "operator": operator})
 
     def jwt_signed(self, engagement_id: str, credential_id: str | None,
                    algorithm: str, claim_keys: list, ttl_seconds: int | None,
@@ -276,10 +253,6 @@ class AuditLogger:
     def panic(self, outcome: dict) -> None:
         self._log("panic", outcome)
 
-    def dry_run_plan(self, tool: str, plan: dict, engagement_id: str) -> None:
-        self._log("dry_run_plan", {"tool": tool, "plan": plan,
-                                   "engagement_id": engagement_id})
-
     def callback_endpoint_event(self, action: str, endpoint_id: str,
                                 detail: dict,
                                 engagement_id: str | None = None) -> None:
@@ -288,12 +261,7 @@ class AuditLogger:
         self._log("callback_endpoint", {"action": action,
                                         "endpoint_id": endpoint_id,
                                         "detail": detail,
-                                        "engagement_id": engagement_id})
-
-    def injection_warning(self, tool: str, patterns: list[str],
-                          engagement_id: str | None = None) -> None:
-        self._log("injection_warning", {"tool": tool, "patterns": patterns,
-                                        "engagement_id": engagement_id})
+                                         "engagement_id": engagement_id})
 
 
 def verify_chain(path: Path) -> tuple[bool, int | None, str]:

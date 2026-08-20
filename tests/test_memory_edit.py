@@ -57,7 +57,7 @@ def test_edit_preserves_metadata(store):
     entries = store.read_long_term()
     mid = entries[0]["id"]
     old_conf = entries[0]["confidence"]
-    r = store.edit(mid, "updated fact")
+    store.edit(mid, "updated fact")
     entries = store.read_long_term()
     new_entry = entries[0]
     assert new_entry["category"] == "vulnerability"

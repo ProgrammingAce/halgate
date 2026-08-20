@@ -45,7 +45,6 @@ async def handle_shell(ctx: ToolContext, command: str, engagement_id: str,
                        **_: Any) -> dict:
     if not isinstance(reason, str) or not reason.strip():
         return {"error": "reason must be a non-empty string"}
-    from ..scope import ScopeGate
     gate = ctx.gate
     try:
         engagement = gate._require_active(engagement_id)

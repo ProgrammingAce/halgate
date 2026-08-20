@@ -1,8 +1,8 @@
 """Tests for memory consolidation."""
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-from harness.config import ConsolidationConfig, EndpointConfig, MemoryConfig
+from harness.config import MemoryConfig
 from harness.llm.client import Completion, TokenUsage
 from harness.memory.consolidate import extract_json, run_consolidation
 from harness.memory.store import MemoryStore

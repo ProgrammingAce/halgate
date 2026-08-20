@@ -17,7 +17,6 @@ import re
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from ..config import MemoryConfig
 
@@ -40,10 +39,6 @@ _STOPWORDS = frozenset(
 
 def _now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
-
-
-def _parse_ts(ts: str) -> str:
-    return ts or ""
 
 
 class MemoryStore:
@@ -167,9 +162,6 @@ class MemoryStore:
                 continue
             out.append(obj)
         return out
-
-    def read_episodes(self) -> list[dict]:
-        return self._read_lines("episodes")
 
     # -- internals ----------------------------------------------------------
 
@@ -386,9 +378,6 @@ class MemoryStore:
 
     def count(self) -> int:
         return len(self.read_long_term())
-
-    def write_short_term(self, text: str) -> None:
-        self._append("short_term", {"ts": _now_iso(), "text": text})
 
     def trim_short_term(self, keep: int | None = None) -> None:
         keep = keep or self._cfg.short_term_keep

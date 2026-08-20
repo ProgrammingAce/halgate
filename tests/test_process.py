@@ -49,8 +49,8 @@ async def test_kill(pm):
 
 @pytest.mark.asyncio
 async def test_kill_all(pm):
-    p1 = await pm.spawn("a", ["sleep", "10"])
-    p2 = await pm.spawn("b", ["sleep", "10"])
+    await pm.spawn("a", ["sleep", "10"])
+    await pm.spawn("b", ["sleep", "10"])
     await asyncio.sleep(0.1)
     killed = pm.kill_all()
     assert len(killed) == 2

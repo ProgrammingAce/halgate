@@ -1,6 +1,5 @@
 """Tests for SafetyController: panic stop, task cancellation, resume."""
 import asyncio
-import asyncio
 import pytest
 
 from harness.config import SafetyConfig
@@ -152,7 +151,7 @@ class TestPanic:
         safety = SafetyController(cfg, pmgr, audit)
         async def slow():
             await asyncio.sleep(10)
-        task = safety.track(asyncio.create_task(slow()))
+        safety.track(asyncio.create_task(slow()))
         await asyncio.sleep(0.05)
         outcome = await safety.panic()
         assert outcome["cancelled_tasks"] >= 1

@@ -76,7 +76,6 @@ class FakeLLM:
             return resp
         if isinstance(resp, Exception):
             raise resp
-        import json as _json
         tc = []
         for c in resp.get("tool_calls") or []:
             tc.append(

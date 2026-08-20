@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from harness.config import Config, EndpointConfig, LLMConfig
-from harness.llm.client import Completion, EndpointHTTPError, OpenAIClient, ToolCall, TokenUsage
+from harness.llm.client import EndpointHTTPError, OpenAIClient
 from harness.llm.router import LLMRouter
 
 

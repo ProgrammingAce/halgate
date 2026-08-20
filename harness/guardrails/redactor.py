@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ..errors import GpgError
 from ..memory.keystore import KeyStore
 
 CREDENTIAL_PATTERNS: list[tuple[re.Pattern, str]] = [

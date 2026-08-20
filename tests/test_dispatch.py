@@ -1,6 +1,5 @@
 """Tests for dispatch_parallel: approval gating, dry-run, budget."""
 import pytest
-from unittest.mock import MagicMock
 
 from harness.config import (BudgetLimits, BudgetsConfig, Config, EndpointConfig,
                             LLMConfig)
@@ -37,8 +36,12 @@ class FakeAudit:
         self.guard_decisions = []
         self.tool_calls = []
         self.tool_results = []
+        self.budget_decisions = []
     def guard_decision(self, name, allowed, reason):
         self.guard_decisions.append((name, allowed, reason))
+    def budget_decision(self, engagement_id, allowed, reason, kind=""):
+        self.budget_decisions.append(
+            (engagement_id, allowed, reason, kind))
     def tool_call(self, name, args, engagement_id):
         self.tool_calls.append((name, args, engagement_id))
     def tool_result(self, name, result, elapsed, truncated=False,
@@ -94,7 +97,6 @@ def setup(tmp_path):
 async def test_auto_approve_no_approvers_called(setup):
     """read_file (AUTO_APPROVE) should not trigger the approver."""
     gate = setup["gate"]
-    eng = setup["eng"]
     audit = setup["audit"]
     executor = setup["executor"]
     cfg = setup["cfg"]
@@ -114,7 +116,6 @@ async def test_auto_approve_no_approvers_called(setup):
 async def test_approval_required_triggers_approvers(setup):
     """shell (APPROVAL_REQUIRED) must call the approver."""
     gate = setup["gate"]
-    eng = setup["eng"]
     audit = setup["audit"]
     executor = setup["executor"]
     cfg = setup["cfg"]
@@ -129,7 +130,6 @@ async def test_approval_required_triggers_approvers(setup):
 @pytest.mark.asyncio
 async def test_denied_by_operator(setup):
     gate = setup["gate"]
-    eng = setup["eng"]
     audit = setup["audit"]
     executor = setup["executor"]
     cfg = setup["cfg"]
@@ -146,7 +146,6 @@ async def test_denied_by_operator(setup):
 @pytest.mark.asyncio
 async def test_dry_run_returns_plan(setup):
     gate = setup["gate"]
-    eng = setup["eng"]
     audit = setup["audit"]
     executor = setup["executor"]
     cfg = setup["cfg"]
@@ -216,6 +215,29 @@ async def test_budget_exhaustion(setup):
         [tc], executor, gate, audit, cfg, auto_approve,
         setup["redactor"], budgets=_ExhaustedBudget("eng1"))
     assert "error" in results[0]
+    # The denial is recorded as a dedicated budget decision event
+    assert audit.budget_decisions == [
+        ("eng1", False, "budget exhausted for eng1: max_actions",
+         "max_actions")]
+
+
+@pytest.mark.asyncio
+async def test_budget_reservation_is_audited(setup):
+    gate = setup["gate"]
+    eng = setup["eng"]
+    audit = setup["audit"]
+    cfg = setup["cfg"]
+    budget_mgr = BudgetManager(
+        BudgetsConfig(default=BudgetLimits(max_actions=5)), [eng])
+    tc = ToolCall(id="1", name="read_file",
+                  arguments={"path": str(setup["root"]),
+                             "engagement_id": "eng1"})
+    results = await dispatch_parallel(
+        [tc], setup["executor"], gate, audit, cfg, auto_approve,
+        setup["redactor"], budgets=budget_mgr)
+    assert results[0]["ok"] is True
+    assert audit.budget_decisions == [
+        ("eng1", True, "reserved 1 max_actions", "")]
 
 
 class _ExhaustedBudget:
