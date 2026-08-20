@@ -8,10 +8,14 @@ from .context import ToolContext
 PANE_NOTE_SCHEMA = {
     "name": "pane_note",
     "description": "Create or update a named read-only note in the right panel. "
-                   "Use for compact tables, findings, or requested summaries.",
+                    "Body is rendered as Markdown; whitespace-aligned plain-text "
+                    "tables are kept verbatim (align columns with spaces so they "
+                    "stay aligned). Use for compact tables, findings, or summaries.",
     "parameters": {"type": "object", "properties": {
         "name": {"type": "string", "description": "Short panel title"},
-        "content": {"type": "string", "description": "Plain-text note or table"},
+        "content": {"type": "string",
+                    "description": "Note body: Markdown text, or a plain-text "
+                                   "table with columns aligned by spaces"},
         "engagement_id": {"type": "string", "description": "Engagement owning this note"},
     }, "required": ["name", "content", "engagement_id"]},
 }

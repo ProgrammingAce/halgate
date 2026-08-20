@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from rich.markdown import Markdown
 from rich.markup import escape
 from textual import work
 from textual import events
@@ -21,7 +22,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.message import Message
 from textual.widgets import (
-    Button, Checkbox, Header, Input, Label, Markdown, RichLog, Select, Static,
+    Button, Checkbox, Header, Input, Label, RichLog, Select, Static,
     TabbedContent, TabPane, TextArea,
 )
 from textual.reactive import var
@@ -37,6 +38,47 @@ from .scope import extract_hostnames, extract_target_refs, extract_urls
 # ScopeGate and the normal budget reservation run before this policy is
 # consulted in dispatch_parallel.
 TARGET_AUTO_APPROVE_TOOLS = frozenset({"shell", "http", "http_replay", "http_session", "auth_session", "multipart_upload", "websocket", "tcp_probe", "scan", "jwt_sign"})
+HTTP_RESULT_TOOLS = frozenset({"http", "http_replay", "http_session"})
+
+SLASH_COMMANDS: list[tuple[str, str]] = [
+    ("/status", "current scope, engagement, and safety status"),
+    ("/panes", "list running tool processes"),
+    ("/recall <query>", "search stored memories"),
+    ("/checkpoint", "save a checkpoint now (auto-named)"),
+    ("/approval reset", "clear session target auto-approvals"),
+    ("/compact [N]", "compress transcript, keep last N turns (default 1)"),
+    ("/dry-run on|off", "toggle dry-run mode for all tools"),
+    ("/panic", "kill all processes and lock further actions"),
+    ("/resume-actions", "unlock actions after /panic"),
+    ("/budget [id]", "show budget usage (all or one budget)"),
+    ("/engagement list", "list engagements"),
+    ("/engagement add label:target[:package[:host|container]]", "add an engagement"),
+    ("/engagement mode <id> host|container", "set execution mode"),
+    ("/engagement pause|resume <id>", "pause or resume an engagement"),
+    ("/engagement claims <id> add|remove [key...]", "manage JWT claim extensions"),
+    ("/secret list | /secret reveal <id> | /secret store", "browse stored secrets"),
+    ("/kill <name>", "kill a running process"),
+    ("/sessions", "resume a saved session"),
+    ("/new", "start a new scope and engagement"),
+    ("/quit", "save a checkpoint and exit"),
+]
+
+HELP_MARKDOWN = """\
+## Keys
+
+* **Enter** — submit prompt · **Shift+Enter** — newline
+* **Up/Down** — prompt history, or scroll the focused pane
+* **Tab / Shift+Tab** — cycle panes
+* **Esc** — cancel a running prompt (press again to dismiss)
+* **F1** — this help · **F5** — refresh panes
+* **Ctrl+Shift+[ / ]** — narrow / widen the chat panel
+* **Ctrl+Shift+C** — copy selection · **Ctrl+Shift+A** — copy transcript
+* **Ctrl+Shift+V** — paste from system clipboard · **Ctrl+C** — quit
+* **?** button — this help · **⚙ button** — settings
+
+## Commands
+
+""" + "\n".join(f"* `{c}` — {d}" for c, d in SLASH_COMMANDS)
 PANE_SCROLLBACK_LINES = 20_000
 MAX_UI_LABEL_LENGTH = 80
 
@@ -62,11 +104,40 @@ def _safe_ui_label(value: object, fallback: str = "Untitled") -> str:
     """Make externally supplied titles safe for tabs, buttons, and headings."""
     text = re.sub(r"[\x00-\x1f\x7f]", " ", str(value or ""))
     text = " ".join(text.split())
+    text = re.sub(r"\s+:", ":", text)
     if not text:
         return fallback
     if len(text) > MAX_UI_LABEL_LENGTH:
         return text[:MAX_UI_LABEL_LENGTH - 1].rstrip() + "…"
     return text
+
+
+def _is_preformatted(text: str) -> bool:
+    """True for whitespace-aligned content (column tables, raw command output).
+
+    Two or more lines that align columns with interior tabs or runs of two or
+    more spaces between words are treated as preformatted so their layout is
+    preserved verbatim.  Single-space prose, Markdown lists, and pipe tables
+    (which use single spaces) all return False.
+    """
+    padded = 0
+    for line in text.splitlines():
+        if re.search(r"\S\t\S", line) or re.search(r"\S {2,}\S", line):
+            padded += 1
+            if padded >= 2:
+                return True
+    return False
+
+
+def _note_renderable(content: str):
+    """Render a note body for a pane.
+
+    Preformatted tables and raw output keep their exact spacing; everything
+    else is Markdown so headings, lists, code, and pipe tables format nicely.
+    """
+    if _is_preformatted(content):
+        return content
+    return Markdown(content)
 
 
 def _exact_action_target(call: ToolCall) -> str | None:
@@ -234,6 +305,12 @@ class ChatPanel(Vertical):
         width: 1fr;
         padding: 0 1;
     }
+    ChatPanel #context-status.ctx-warn {
+        color: $warning;
+    }
+    ChatPanel #context-status.ctx-crit {
+        color: $error;
+    }
     ChatPanel #thinking-status {
         width: auto;
         padding: 0 1;
@@ -252,14 +329,15 @@ class ChatPanel(Vertical):
         self._thinking = Static("", id="thinking-status")
         self._status_bar = Horizontal(
             self._status, self._thinking, id="status-bar")
-        self._activity_toggle = Button("▸ Activity", id="activity-toggle")
-        self._activity_collapse = Button("⌄ Collapse Activity", id="collapse-activity")
+        self._activity_toggle = Button("^^^", id="activity-toggle")
+        self._activity_collapse = Button("vvv", id="collapse-activity")
         self._activity = RichLog(highlight=True, markup=True, wrap=True,
                                  max_lines=500, id="activity-log")
         self._stream = Static("", id="stream-output")
         self._stream_text = ""
         self._stream_has_response = False
         self._activity_open = False
+        self._log_has_entries = False
         self._transcript: list[str] = []
         self._think_timer = None
         self._thinking_started: float | None = None
@@ -276,24 +354,36 @@ class ChatPanel(Vertical):
         yield self._input
         yield self._status_bar
 
+    def _separator(self) -> None:
+        """Rule between chat turns, so wrapped text can't merge entries."""
+        if not self._log_has_entries:
+            self._log_has_entries = True
+            return
+        n = max(20, self._log.scrollable_content_region.width - 2)
+        self._log.write(f"\n[dim]{chr(9472) * n}[/dim]")
+
     def add_user(self, text: str) -> None:
+        self._separator()
         self._transcript.append(f"> {text}")
-        self._log.write(f"\n[dim]> {escape(text)}[/dim]")
+        self._log.write(f"\n[bold]> {escape(text)}[/bold]")
 
     def add_agent(self, text: str, *, markup: bool = True) -> None:
         """Add a harness notice or assistant response to the chat log.
 
-        UI-generated notices use Rich markup for severity/status colors. Model
-        responses must pass ``markup=False`` so their text can't alter the UI.
+        UI-generated notices (``markup=True``) keep their severity colors and
+        no speaker label. Model responses pass ``markup=False`` so their text
+        can't alter the UI; those are labelled and rendered as Markdown
+        (headings, lists, code, tables) rather than as raw text.
         """
-        self._transcript.append(f"Agent: {text}")
-        rendered = text if markup else escape(text)
-        self._log.write(f"\n[bold cyan]Agent:[/bold cyan] {rendered}")
-
-    def add_tool(self, name: str, result: dict) -> None:
-        summary = self._format_result(name, result)
-        self._transcript.append(f"[{name}] {summary}")
-        self._log.write(f"\n[dim]  [{escape(name)}] {escape(summary)}[/dim]")
+        self._separator()
+        if markup:
+            self._transcript.append(text)
+            self._log.write(f"\n{text}")
+        else:
+            self._transcript.append(f"Agent: {text}")
+            self._log.write("\n[bold cyan]Agent:[/bold cyan]")
+            if text.strip():
+                self._log.write(Markdown(text))
 
     def add_activity(self, kind: str, text: str) -> None:
         """Show operator-visible agent progress, not private reasoning."""
@@ -301,15 +391,24 @@ class ChatPanel(Vertical):
             self._transcript.append(f"Agent: {text}")
             self._activity.write(f"[cyan]Agent:[/cyan] {escape(text)}")
         elif kind == "tool_call":
+            name, sep, args = text.partition(": ")
             self._transcript.append(f"Proposed action: {text}")
-            self._activity.write(
-                f"[yellow]Proposed action:[/yellow] {escape(text)}")
+            if sep:
+                self._activity.write(
+                    f"[yellow]Proposed action:[/yellow] [bold]{escape(name)}[/bold]  "
+                    f"{escape(args)}")
+            else:
+                self._activity.write(
+                    f"[yellow]Proposed action:[/yellow] {escape(text)}")
         elif kind == "tool_result":
             name, sep, raw = text.partition(": ")
-            try:
-                rendered = self._format_result(name, json.loads(raw)) if sep else text
-            except json.JSONDecodeError:
-                rendered = text
+            if sep:
+                try:
+                    rendered = self._format_result(name, json.loads(raw))
+                except json.JSONDecodeError:
+                    rendered = self._truncate_block(raw, 1_500)
+            else:
+                rendered = self._truncate_block(text, 1_500)
             self._transcript.append(f"Result: {rendered}")
             self._activity.write(f"[dim]Result:[/dim] {escape(rendered)}")
 
@@ -321,25 +420,45 @@ class ChatPanel(Vertical):
             f"[dim]{escape(action)} {escape(stream)}:[/dim] {escape(text)}")
 
     @staticmethod
-    def _format_result(name: str, result: Any) -> str:
+    def _truncate_block(text: str, limit: int) -> str:
+        """Cap displayed tool output with an explicit truncation marker."""
+        if len(text) <= limit:
+            return text
+        return text[:limit] + f"\n… (truncated; {len(text) - limit:,} more characters)"
+
+    @classmethod
+    def _format_result(cls, name: str, result: Any) -> str:
         """Turn verbose tool JSON into an operator-readable result."""
         if not isinstance(result, dict):
             return str(result)
-        if name == "http":
+        if name in HTTP_RESULT_TOOLS and "status" in result:
             headers = result.get("headers") or {}
+            summary = [f"HTTP {result.get('status', '?')}"]
+            if result.get("url"):
+                summary.append(str(result["url"]))
+            content_type = headers.get("content-type")
+            if content_type:
+                summary.append(f"({content_type})")
+            lines = [" ".join(summary)]
+            for key in ("location", "server", "set-cookie"):
+                if key in headers:
+                    lines.append(f"  {key}: {headers[key]}")
             body = str(result.get("body") or "")
-            if len(body) > 1_200:
-                body = body[:1_200] + "\n… (body truncated for display)"
-            content_type = headers.get("content-type", "unknown")
-            return f"HTTP {result.get('status', '?')}  Content-Type: {content_type}\n\n{body}"
+            if body:
+                lines.append("")
+                lines.append(cls._truncate_block(body, 1_200))
+            return "\n".join(lines)
         if name == "scan":
             hosts = result.get("hosts") or []
             raw = str(result.get("raw") or "")
-            return f"Hosts: {', '.join(map(str, hosts)) or 'none reported'}\n\n{raw[:1_500]}"
+            return (f"Hosts: {', '.join(map(str, hosts)) or 'none reported'}\n\n"
+                    + cls._truncate_block(raw, 1_500))
         if name == "shell":
             output = str(result.get("stdout") or result.get("stderr") or "")
-            return f"Exit code: {result.get('rc', '?')}\n\n{output[:1_500]}"
-        return json.dumps(result, indent=2, default=str)[:1_500]
+            return (f"Exit code: {result.get('rc', '?')}\n\n"
+                    + cls._truncate_block(output, 1_500))
+        return cls._truncate_block(
+            json.dumps(result, indent=2, default=str), 1_500)
 
     def toggle_activity(self) -> None:
         """Expand or collapse the operator-facing thinking/activity trace."""
@@ -369,10 +488,15 @@ class ChatPanel(Vertical):
         return "\n\n".join(self._transcript)
 
     def restore_history(self, messages: list[dict]) -> None:
-        """Rebuild visible backscroll from a checkpoint transcript."""
+        """Rebuild visible backscroll from a checkpoint transcript.
+
+        Routes each entry through the same methods the live run uses so a
+        restored session looks identical to a session that was never closed.
+        """
         self._log.clear()
         self._activity.clear()
         self._transcript.clear()
+        self._log_has_entries = False
         tool_names: dict[str, str] = {}
         for message in messages:
             role = message.get("role")
@@ -384,29 +508,31 @@ class ChatPanel(Vertical):
                     self.add_agent(str(content), markup=False)
                 for call in message.get("tool_calls") or []:
                     function = call.get("function") or {}
-                    name = str(function.get("name") or "tool")
-                    call_id = str(call.get("id") or "")
-                    tool_names[call_id] = name
-                    args = function.get("arguments") or "{}"
-                    line = f"{name}: {args}"
-                    self._transcript.append(f"Proposed action: {line}")
-                    self._log.write(
-                        f"\n[yellow]Proposed action:[/yellow] {escape(line)}")
+                    tool_names[str(call.get("id") or "")] = str(
+                        function.get("name") or "tool")
+                    self.add_activity(
+                        "tool_call",
+                        f"{function.get('name') or 'tool'}: "
+                        f"{function.get('arguments') or '{}'}")
             elif role == "tool":
-                name = tool_names.get(str(message.get("tool_call_id") or ""), "tool")
-                content = str(message.get("content") or "")
-                try:
-                    rendered = self._format_result(name, json.loads(content))
-                except json.JSONDecodeError:
-                    rendered = content[:1_500]
-                line = f"{name}:\n{rendered}"
-                self._transcript.append(f"Result: {line}")
-                self._log.write(f"\n[dim]Result:[/dim] {escape(line)}")
+                name = tool_names.get(
+                    str(message.get("tool_call_id") or ""), "tool")
+                self.add_activity(
+                    "tool_result",
+                    f"{name}: {str(message.get('content') or '')}")
 
     def add_status(self, text: str) -> None:
         self._update_status(text)
 
     def _update_status(self, text: str) -> None:
+        """Show context usage; turn amber/red as the budget fills up."""
+        match = re.search(r"\((\d+)%\)", text)
+        pct = int(match.group(1)) if match else 0
+        self._status.remove_class("ctx-warn", "ctx-crit")
+        if pct >= 80:
+            self._status.add_class("ctx-crit")
+        elif pct >= 50:
+            self._status.add_class("ctx-warn")
         self._status.update(text)
 
     def get_input(self) -> str:
@@ -524,10 +650,10 @@ class PanePanel(Vertical):
         self._closed_processes: set[str] = set()
         self._tabs = TabbedContent(id="pane-tabs")
         self._header = Static("[bold]PANES (0) — Tab / Shift+Tab to switch[/bold]")
-        self._split_btn = Button("Split Panes", id="split-panes")
-        self._close_btn = Button("Close Active Pane", id="close-pane")
-        self._save_btn = Button("Save", id="save-pane")
-        self._load_btn = Button("Load", id="load-pane")
+        self._split_btn = Button("Split", id="split-panes")
+        self._close_btn = Button("Close", id="close-pane")
+        self._save_btn  = Button("Save", id="save-pane")
+        self._load_btn  = Button("Load", id="load-pane")
         self._split_view = Vertical(id="split-view")
         self._split_top_label = Static("", classes="split-label")
         self._split_top_log = RichLog(highlight=True, markup=False, wrap=True,
@@ -543,13 +669,22 @@ class PanePanel(Vertical):
         self._split_top: str | None = None
         self._split_bottom: str | None = None
 
+    def _set_button_label(self, button: Button, text: str) -> None:
+        """Relabel a control button and force a layout pass.
+
+        Textual's auto-sized buttons keep their measured width when only the
+        label changes, so swap labels through this helper.
+        """
+        button.label = text
+        button.refresh(layout=True)
+
     def note(self, name: str, content: str, engagement_id: str = "") -> None:
         """Create or replace a persistent, non-process panel note."""
         title = _safe_ui_label(name)
         key = f"note:{title}"
         if key in self._notes:
             self._notes[key].clear()
-            self._notes[key].write(content)
+            self._notes[key].write(_note_renderable(content))
             pane_id = next((tab_id for tab_id, note_key in self._note_tabs.items()
                             if note_key == key), None)
             if pane_id:
@@ -561,10 +696,12 @@ class PanePanel(Vertical):
             return
         # RichLog is focusable and vertically scrollable; Static clipped long
         # tables and reports, making stored panes effectively unreadable.
+        # Notes preserve preformatted tables verbatim and render everything
+        # else as Markdown so agent reports keep their structure.
         note = RichLog(highlight=True, markup=False, wrap=True,
                        max_lines=PANE_SCROLLBACK_LINES,
                        id=f"note-{len(self._notes) + 1}")
-        note.write(content)
+        note.write(_note_renderable(content))
         self._notes[key] = note
         pane_id = f"note-{len(self._notes)}"
         self._tabs.add_pane(TabPane(title, note, id=pane_id))
@@ -658,15 +795,15 @@ class PanePanel(Vertical):
             self._select_split_pair(top)
             self._tabs.styles.display = "none"
             self._split_view.styles.display = "block"
-            self._split_btn.label = "Single Pane"
-            self._close_btn.label = "Close Top Pane"
+            self._set_button_label(self._split_btn, "Single")
+            self._set_button_label(self._close_btn, "Close Top")
         else:
             self._tabs.styles.display = "block"
             self._split_view.styles.display = "none"
             if self._split_top:
                 self._tabs.active = self._split_top
-            self._split_btn.label = "Split Panes"
-            self._close_btn.label = "Close Active Pane"
+            self._set_button_label(self._split_btn, "Split")
+            self._set_button_label(self._close_btn, "Close")
         self._refresh_header()
         return True
 
@@ -692,8 +829,12 @@ class PanePanel(Vertical):
             log.clear()
             if tab_id:
                 label.update(f"[bold]{self._tab_titles.get(tab_id, tab_id)}[/bold]")
-                if self._pane_text.get(tab_id):
-                    log.write(self._pane_text[tab_id])
+                body = self._pane_text.get(tab_id)
+                if body:
+                    # Notes render exactly like the single view (preserving
+                    # preformatted tables / Markdown); process panes are raw.
+                    log.write(_note_renderable(body)
+                              if tab_id in self._note_tabs else body)
 
     def close_active(self) -> str | None:
         """Remove the active tab and return its backing process ID, if any."""
@@ -740,8 +881,8 @@ class PanePanel(Vertical):
         self._split_bottom = None
         self._tabs.styles.display = "block"
         self._split_view.styles.display = "none"
-        self._split_btn.label = "Split Panes"
-        self._close_btn.label = "Close Active Pane"
+        self._set_button_label(self._split_btn, "Split")
+        self._set_button_label(self._close_btn, "Close")
         self._refresh_header()
 
     def _refresh_header(self) -> None:
@@ -1278,6 +1419,49 @@ class SessionsModal(ModalScreen):
             super().__init__()
 
 
+class HelpModal(ModalScreen):
+    """Keyboard and slash-command reference (F1 or ? button)."""
+
+    CSS = """
+    HelpModal {
+        width: 78;
+        height: 22;
+        align: center middle;
+        background: $surface;
+        border: tall $accent;
+    }
+    HelpModal #help-title {
+        text-style: bold;
+        padding: 0 1;
+    }
+    HelpModal #help-log {
+        height: 1fr;
+        margin: 0 1 1 1;
+    }
+    """
+
+    BINDINGS = [
+        ("f1", "dismiss", "Close"),
+        ("escape", "dismiss", "Close"),
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._log = RichLog(
+            highlight=False, markup=False, wrap=True,
+            max_lines=2000, id="help-log")
+
+    def compose(self) -> ComposeResult:
+        yield Static("Help — F1 / Esc to close", id="help-title")
+        yield self._log
+
+    def on_mount(self) -> None:
+        self._log.write(Markdown(HELP_MARKDOWN))
+
+    def action_dismiss(self) -> None:
+        self.dismiss()
+
+
 class ConfigModal(ModalScreen):
     """Settings: LLM endpoint + tool availability toggles."""
 
@@ -1410,12 +1594,15 @@ class HarnessApp(App):
         width: 1fr;
     }
     #approval-badge {
+        /* AUTO is the safe state (no tools held back), so read as green.
+           Pending approvals switch it to yellow via inline markup. */
         width: auto;
-        color: $warning;
+        color: $success;
         background: $primary 80%;
         padding: 0 1;
     }
-    #header-gear {
+    #header-help,
+    #header-config {
         width: 3;
         content-align: center middle;
         background: $primary 80%;
@@ -1528,6 +1715,9 @@ class HarnessApp(App):
         width: 100%;
         dock: bottom;
     }
+    #pane-controls Button {
+        min-width: 0;
+    }
     """
 
     BINDINGS = [
@@ -1536,6 +1726,9 @@ class HarnessApp(App):
         ("ctrl+shift+a", "copy_transcript", "Copy chat"),
         ("ctrl+shift+v", "paste_system", "Paste"),
         ("f5", "refresh_panes", "Refresh panes"),
+        ("f1", "help", "Help"),
+        ("ctrl+shift+left_square_bracket", "shrink_chat", "Narrow chat"),
+        ("ctrl+shift+right_square_bracket", "grow_chat", "Widen chat"),
     ]
 
     def __init__(self, harness: Harness):
@@ -1564,13 +1757,16 @@ class HarnessApp(App):
         header_text = Static(
             f"[bold]halgate[/bold]  scope:{scope_str}"
             f"  llm:{self.h.router.active_endpoint.id}"
-            f"  session:{self.h.session_id}")
+            f"  session:{self.h.session_id[:8]}")
         header_text.id = "header-text"
         approval_badge = Static("", id="approval-badge")
-        gear = Button("?", id="header-gear", variant="primary")
-        gear.width = 3
+        help_btn = Button("?", id="header-help", variant="primary",
+                          tooltip="Help (F1)")
+        config_btn = Button("⚙", id="header-config", variant="primary",
+                            tooltip="Settings")
         from textual.containers import Horizontal as _H
-        header_bar = _H(header_text, approval_badge, gear, id="header-bar")
+        header_bar = _H(
+            header_text, approval_badge, help_btn, config_btn, id="header-bar")
         chat = ChatPanel()
         chat.id = "chat-panel"
         pane_p = PanePanel()
@@ -1578,15 +1774,43 @@ class HarnessApp(App):
         main = Horizontal(chat, pane_p, id="main")
         self._chat = chat
         self._pane_panel = pane_p
-        self._gear = gear
         self._approval_badge = approval_badge
         yield header_bar
         yield main
+
+    def _apply_chat_width(self) -> None:
+        """Apply the configured chat/pane split ratio."""
+        self.query_one("#chat-panel").styles.width = (
+            f"{self.h.config.tui.chat_width_pct}%")
+
+    def _nudge_chat_width(self, delta: int) -> None:
+        self.h.config.tui.chat_width_pct = max(
+            20, min(80, self.h.config.tui.chat_width_pct + delta))
+        self._apply_chat_width()
+
+    def action_shrink_chat(self) -> None:
+        self._nudge_chat_width(-4)
+
+    def action_grow_chat(self) -> None:
+        self._nudge_chat_width(4)
+
+    def _refresh_identity(self, *, llm: str | None = None) -> None:
+        """Keep the terminal title and header in sync (short session id)."""
+        sid = self.h.session_id
+        self.title = f"halgate — {sid[:8]}"
+        scope_str = ",".join(e.package for e in self.h.engagements) or "none"
+        if llm is None:
+            llm = str(self.h.router.active_endpoint.id)
+        self.query_one("#header-text", Static).update(
+            f"[bold]halgate[/bold]  scope:{scope_str}"
+            f"  llm:{llm}  session:{sid[:8]}")
 
     def on_mount(self) -> None:
         """Set initial focus to the input and sync panes."""
         self._chat.focus_input()
         self._sync_panes()
+        self._apply_chat_width()
+        self._refresh_identity()
         self.set_interval(0.25, self._refresh_pane_output)
         self.h.approver = self._approve_tool
         self.h.activity_callback = self._on_agent_activity
@@ -1607,7 +1831,9 @@ class HarnessApp(App):
                 self.h.lifetime_tokens.status_line()))
 
     def on_button_pressed(self, e: Button.Pressed) -> None:
-        if e.button.id == "header-gear":
+        if e.button.id == "header-help":
+            self.action_help()
+        elif e.button.id == "header-config":
             self._open_config()
         elif e.button.id == "activity-toggle" and self._chat:
             self._chat.toggle_activity()
@@ -1985,11 +2211,7 @@ class HarnessApp(App):
         self._chat.add_agent(
             f"[green]Config updated: {ep.model} @ {ep.base_url} "
             f"temp={ep.temperature} maxtok={ep.max_tokens}[/green]")
-        self.query_one("#header-text", Static).update(
-            f"[bold]halgate[/bold]  scope:"
-            f"[{','.join(e.package for e in self.h.engagements) or 'none'}]"
-            f"  llm:{ep.id  }:{ep.model}"
-            f"  session:{self.h.session_id}")
+        self._refresh_identity(llm=f"{ep.id}:{ep.model}")
 
     def _restore_chat_history(self) -> None:
         if self._chat:
@@ -2470,8 +2692,15 @@ class HarnessApp(App):
                 self._chat.add_agent(f"Killed {arg}.")
         elif name == "sessions":
             self._open_sessions_modal()
+        elif name == "help":
+            self.action_help()
         else:
-            self._chat.add_agent(f"Unknown: /{name}")
+            self._chat.add_agent(
+                f"Unknown: /{name} — type /help or press F1 for the "
+                "command list")
+
+    def action_help(self) -> None:
+        self.push_screen(HelpModal())
 
     def action_quit(self) -> None:
         self.h.checkpoint()

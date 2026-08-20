@@ -21,3 +21,8 @@ audit:
 
 # Set only when an authorized target must reach a callback listener.
 callback: {}
+
+# TUI layout: width of the left chat pane, in percent (clamped to 20-80).
+# Adjust live with Ctrl+Shift+[ and Ctrl+Shift+].
+tui:
+  chat_width_pct: 62

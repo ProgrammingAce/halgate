@@ -2,7 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from harness.config import CallbackConfig, Config, load_config, load_packages, _expand_env
+from harness.config import (
+    CallbackConfig, Config, TUIConfig, load_config, load_packages, _expand_env,
+)
 from harness.errors import ConfigError
 
 REPO = Path(__file__).resolve().parent.parent
@@ -99,6 +101,13 @@ def test_config_defaults_without_file(tmp_path):
     # explicit missing path is an error; default resolution uses cwd/config.yaml
     with pytest.raises(ConfigError):
         load_config(tmp_path / "nonexistent.yaml")
+
+
+def test_tui_chat_width_defaults_and_clamps():
+    assert TUIConfig().chat_width_pct == 62
+    assert TUIConfig(chat_width_pct=45).chat_width_pct == 45
+    assert TUIConfig(chat_width_pct=900).chat_width_pct == 80
+    assert TUIConfig(chat_width_pct=5).chat_width_pct == 20
 
 
 def test_scope_package_validation(packages, monkeypatch):

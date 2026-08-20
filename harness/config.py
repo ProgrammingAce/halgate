@@ -203,6 +203,11 @@ class CallbackConfig(BaseModel):
 class TUIConfig(BaseModel):
     chat_width_pct: int = 62
 
+    @field_validator("chat_width_pct")
+    @classmethod
+    def _clamp_chat_width(cls, v: int) -> int:
+        return max(20, min(80, v))
+
 
 class Config(BaseModel):
     llm: LLMConfig
