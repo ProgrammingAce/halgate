@@ -13,6 +13,8 @@ services:
     environment:
       # config.yaml supports ${VAR} expansion; pass keys in from the shell.
       LLM_API_KEY: ${LLM_API_KEY-}
+      # Preserve the host terminal type for Textual keyboard / mouse input.
+      TERM: ${TERM:-xterm-256color}
     # HALGATE_DATA_HOST: pick the host-side folder that persists all four
     # state dirs (.halgate_memory, .halgate_audit, .halgate_sessions,
     # .halgate_evidence). To reuse the folders already in the repo root, run

@@ -19,7 +19,9 @@ from rich.markup import escape
 from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.drivers.linux_driver import LinuxDriver
 from textual.message import Message
+from textual.messages import InBandWindowResize
 from textual.widgets import (
     Button, Checkbox, Input, RichLog, Select, Static,
     TabbedContent, TabPane, TextArea,
@@ -79,6 +81,27 @@ HELP_MARKDOWN = """\
 """ + "\n".join(f"* `{c}` — {d}" for c, d in SLASH_COMMANDS)
 PANE_SCROLLBACK_LINES = 20_000
 MAX_UI_LABEL_LENGTH = 80
+
+
+class _ContainerLinuxDriver(LinuxDriver):
+    """Use cell-based mouse reports through a container PTY.
+
+    Podman's TTY relay may advertise in-band resize support while forwarding
+    ordinary cell-based SGR mouse coordinates. Textual then enables pixel-mode
+    mouse reporting and scales those coordinates a second time; clicks miss
+    every widget and Screen clears focus. Ignore that optional negotiation in
+    containers, retaining standard SGR mouse support and correct click targets.
+    """
+
+    def process_message(self, message: Message) -> None:
+        if isinstance(message, InBandWindowResize):
+            return
+        super().process_message(message)
+
+
+def _is_container() -> bool:
+    """Whether this process is running in a common OCI container runtime."""
+    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
 
 # Some terminal multiplexers and remote terminals can deliver mouse reports to
@@ -956,6 +979,8 @@ class ScratchPickerModal(ModalScreen):
 class OnboardingModal(ModalScreen):
     """Shown when no engagements are active on startup."""
 
+    AUTO_FOCUS = "#onb-label"
+
     def __init__(self, packages: list[str], default_pkg: str,
                  sessions: list[dict], lifetime_usage: str = ""):
         super().__init__()
@@ -969,42 +994,60 @@ class OnboardingModal(ModalScreen):
 
     CSS = """
     OnboardingModal {
-        width: 60;
-        height: auto;
-        max-height: 25;
+        layout: vertical;
         align: center middle;
+        /* Transparent so the live app is visible behind the setup card
+           instead of a full-screen dimmed overlay that traps input. */
+        background: transparent;
+    }
+    OnboardingModal #onb-content {
+        width: 76;
+        max-width: 96%;
+        height: auto;
+        max-height: 90%;
         background: $surface;
         border: tall $accent;
-    }
-    OnboardingModal Vertical {
         padding: 1 2;
+        overflow-y: auto;
     }
     OnboardingModal #onb-title {
         text-style: bold;
         color: $text;
     }
-    OnboardingModal Input {
-        margin-bottom: 1;
+    OnboardingModal Input,
+    OnboardingModal Checkbox {
+        border: none;
+        height: 1;
+        padding: 0 1;
+    }
+    OnboardingModal #onb-cont {
+        layout: vertical;
+        height: auto;
+    }
+    OnboardingModal #onb-cont > Button {
+        width: 100%;
     }
     OnboardingModal #onb-buttons {
-        layout: horizontal;
+        layout: vertical;
+        height: auto;
         margin-top: 1;
     }
-    OnboardingModal Button {
-        margin: 0 1 0 0;
+    OnboardingModal #onb-buttons > Button {
+        width: 100%;
     }
     OnboardingModal #onb-lifetime {
-        dock: bottom;
-        height: 1;
+        height: auto;
+        margin-top: 1;
         width: 100%;
-        padding: 0 2;
-        background: $panel;
         color: $text-muted;
     }
     """
 
     BINDINGS = [
         ("ctrl+c", "dismiss", "Close"),
+        # Escape reveals the live app behind the setup card, so first-run
+        # never feels like input is being blocked.
+        ("escape", "dismiss", "Back"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -1017,24 +1060,27 @@ class OnboardingModal(ModalScreen):
             Input(placeholder="10.0.0.1", id="onb-target"),
             Static("  Scope package:"),
             Select([(p, p) for p in self._packages],
-                   value=self._default_pkg, id="onb-pkg"),
+                   value=self._default_pkg, compact=True, id="onb-pkg"),
             Checkbox("Generate a protected OpenPGP keypair in Downloads",
                      id="onb-generate-key"),
             Input(value=self._generated_key_passphrase,
                   placeholder="Key passphrase (12+ characters)", password=True,
                   id="onb-key-passphrase"),
-            Static(" "),
+            *([Vertical(
+                    *(Button("Continue: " + s['name'],
+                             id=f"onb-cont-{s['id']}")
+                      for s in self._sessions[:3]),
+                    id="onb-cont",
+             )] if self._sessions else []),
             Vertical(
-                Button("Start Engagement", variant="success",
-                       id="onb-start"),
-                *(Button("Continue: " + s['name'], id=f"onb-cont-{s['id']}")
-                  for s in self._sessions[:3]),
+                Button("Start Engagement", variant="success", id="onb-start"),
                 Button("Manage Sessions", variant="warning", id="onb-manage"),
                 Button("Skip", variant="primary", id="onb-skip"),
                 id="onb-buttons",
             ),
+            Static(self._lifetime_usage, id="onb-lifetime"),
+            id="onb-content",
         )
-        yield Static(self._lifetime_usage, id="onb-lifetime")
 
     def on_button_pressed(self, e: Button.Pressed) -> None:
         if e.button.id == "onb-start":
@@ -1223,6 +1269,8 @@ class ApprovalModal(ModalScreen):
 
 class PaneModal(ModalScreen):
     """Collect the minimum data required to create a live pane."""
+
+    AUTO_FOCUS = "#pane-name"
 
     def __init__(self, engagements: list):
         super().__init__()
@@ -1450,6 +1498,8 @@ class HelpModal(ModalScreen):
 class ConfigModal(ModalScreen):
     """Settings: LLM endpoint + tool availability toggles."""
 
+    AUTO_FOCUS = "#cfg-url"
+
     CSS = """
     ConfigModal {
         width: 70;
@@ -1483,7 +1533,7 @@ class ConfigModal(ModalScreen):
     """
 
     BINDINGS = [
-        ("ctrl+c", "dismiss", "Close"),
+        ("escape,ctrl+c", "dismiss", "Close"),
     ]
 
     def __init__(self, endpoint: list, tools: list[dict],
@@ -1717,7 +1767,7 @@ class HalgateApp(App):
     ]
 
     def __init__(self, halgate: Halgate):
-        super().__init__()
+        super().__init__(driver_class=_ContainerLinuxDriver if _is_container() else None)
         self.h = halgate
         self._chat: ChatPanel | None = None
         self._pane_panel: PanePanel | None = None
@@ -1806,14 +1856,19 @@ class HalgateApp(App):
         self._chat.add_status(self.h.tracker.status_line())
         self._refresh_approval_badge()
         if not self.h.engagements:
-            from .sessions.checkpoint import SessionCheckpoint
-            sessions = SessionCheckpoint.list_sessions(
-                self.h.config.sessions.dir)
-            packages = list(self.h.config.packages.keys())
-            default_pkg = self.h.config.scope.package or "defensive"
-            self.push_screen(OnboardingModal(
-                packages, default_pkg, sessions,
-                self.h.lifetime_tokens.status_line()))
+            self._show_onboarding()
+
+    async def on_event(self, event: Message) -> None:
+        """Ignore bogus terminal blur reports forwarded by container PTYs.
+
+        Textual maps ``ESC [ O`` to ``AppBlur`` and clears the focused widget.
+        Podman can emit that sequence after a mouse report without a matching
+        focus-in sequence, leaving this terminal-only TUI unable to receive
+        keyboard input. Retaining the current widget is correct here.
+        """
+        if isinstance(event, events.AppBlur):
+            return
+        await super().on_event(event)
 
     def on_button_pressed(self, e: Button.Pressed) -> None:
         if e.button.id == "header-help":
@@ -1836,6 +1891,13 @@ class HalgateApp(App):
 
     def on_key(self, event: events.Key) -> None:
         """Handle prompt cancellation and right-panel keyboard navigation."""
+        # The app-level Tab/Shift+Tab pane cycling only makes sense on the
+        # main screen.  While a modal (onboarding, approvals, config, ...) is
+        # open, let Textual's normal focus handling move between its fields and
+        # buttons, so a modal stays fully keyboard- and mouse-navigable.
+        in_modal = isinstance(self.screen, ModalScreen)
+        if in_modal:
+            return
         if event.key == "escape" and self._cancel_running_prompt():
             event.stop()
             event.prevent_default()
@@ -1848,11 +1910,11 @@ class HalgateApp(App):
               and self._pane_panel.scroll_active(-1 if event.key == "up" else 1)):
             event.stop()
             event.prevent_default()
-        elif event.key == "tab" and self._pane_panel:
+        elif event.key == "tab" and self._pane_panel and not in_modal:
             event.stop()
             event.prevent_default()
             self._pane_panel.cycle_tab(1)
-        elif event.key == "shift+tab" and self._pane_panel:
+        elif event.key == "shift+tab" and self._pane_panel and not in_modal:
             event.stop()
             event.prevent_default()
             self._pane_panel.cycle_tab(-1)

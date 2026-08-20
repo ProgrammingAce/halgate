@@ -10,9 +10,12 @@ ARG HALGATE_USER=halgate
 #   sqlmap ffuf hydra thc-hydra masscan nikto whatweb ldap-utils snmp smbclient
 ARG EXTRA_TOOLS=""
 
+# Textual needs a capable terminal description to enable its input driver.
+# Docker does not reliably propagate TERM through compose.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    TERM=xterm-256color
 
 # Deterministic uid/gid 1000 so rootless host bind mounts match the container
 # user, and so the state root exists with correct ownership before the

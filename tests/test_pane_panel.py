@@ -1,13 +1,17 @@
 """Interaction tests for the right-side pane tab panel."""
 
 import json
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
+from textual import events
 from textual.app import App, ComposeResult
 from textual.css.scalar import Unit
-from textual.widgets import Button, Input, RichLog
+from textual.messages import InBandWindowResize
+from textual.widgets import Button, Checkbox, Input, RichLog, Select
 
 from halgate.scope import Engagement
 from halgate.tui import (
@@ -17,7 +21,9 @@ from halgate.tui import (
     HalgateApp,
     HelpModal,
     OnboardingModal,
+    PaneModal,
     PanePanel,
+    _ContainerLinuxDriver,
     _is_preformatted,
     _note_renderable,
     _safe_ui_label,
@@ -40,6 +46,79 @@ class ChatTestApp(App):
         chat = ChatPanel()
         chat.id = "chat-panel"
         yield chat
+
+
+@pytest.mark.asyncio
+async def test_onboarding_modal_focuses_first_input() -> None:
+    """The initial menu must focus its first input so the user can type."""
+    class OnboardingFocusApp(App):
+        # Points at a widget on the base screen, not the modal, so the
+        # modal must supply focus itself.
+        AUTO_FOCUS = "#chat-input"
+
+        def compose(self) -> ComposeResult:
+            yield Input(id="unrelated")
+
+        def on_mount(self) -> None:
+            self.push_screen(OnboardingModal(["defensive"], "defensive", []))
+
+    async with OnboardingFocusApp().run_test() as pilot:
+        await pilot.pause()
+        label = pilot.app.screen.query_one("#onb-label", Input)
+        assert label.has_focus
+        assert pilot.app.focused is label
+
+
+@pytest.mark.asyncio
+async def test_pane_modal_focuses_name_input() -> None:
+    """The New Pane modal must focus its name field so the user can type."""
+    class PaneFocusApp(App):
+        AUTO_FOCUS = "#chat-input"
+
+        def compose(self) -> ComposeResult:
+            yield Input(id="unrelated")
+
+        def on_mount(self) -> None:
+            self.push_screen(PaneModal([
+                Engagement("eng-01", "Target", "127.0.0.1", "read-only")]))
+
+    async with PaneFocusApp().run_test() as pilot:
+        await pilot.pause()
+        name = pilot.app.screen.query_one("#pane-name", Input)
+        assert name.has_focus
+        assert pilot.app.focused is name
+
+
+def _onboarding_app() -> HalgateApp:
+    """A real app with no engagements, so it opens the initial menu modal."""
+    engine = MagicMock()
+    engine.engagements = []
+    engine.session_id = "abcd1234ef01"
+    engine.router.active_endpoint.id = "local-endpoint"
+    engine.config.tui.chat_width_pct = 62
+    engine.config.packages = {"defensive": "Defensive", "offensive": "Offensive"}
+    engine.config.scope.package = "defensive"
+    engine.config.sessions.dir = tempfile.mkdtemp()
+    engine.registry.ctx.extra = {}
+    engine.tracker.status_line.return_value = "ready"
+    engine.lifetime_tokens.status_line.return_value = ""
+    return HalgateApp(engine)
+
+
+@pytest.mark.asyncio
+async def test_onboarding_modal_tab_reaches_fields_and_buttons() -> None:
+    """Tab must walk the modal's fields and buttons, not get hijacked by app."""
+    async with _onboarding_app().run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        assert pilot.app.screen.__class__.__name__ == "OnboardingModal"
+        assert pilot.app.focused.id == "onb-label"
+        visited = []
+        for _ in range(6):
+            await pilot.press("tab")
+            await pilot.pause()
+            visited.append(pilot.app.focused.id)
+        assert "onb-target" in visited
+        assert "onb-start" in visited
 
 
 @pytest.mark.asyncio
@@ -251,7 +330,7 @@ def test_load_uses_the_only_active_engagement_when_no_pane_exists(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_onboarding_lifetime_usage_is_docked_at_the_bottom() -> None:
+async def test_onboarding_lifetime_usage_lives_inside_the_setup_card() -> None:
     class OnboardingApp(App):
         def on_mount(self) -> None:
             self.push_screen(OnboardingModal(
@@ -261,12 +340,99 @@ async def test_onboarding_lifetime_usage_is_docked_at_the_bottom() -> None:
     async with app.run_test() as pilot:
         await pilot.pause()
         status = app.screen.query_one("#onb-lifetime")
+        card = app.screen.query_one("#onb-content")
         passphrase = app.screen.query_one("#onb-key-passphrase", Input).value
         assert str(status.render()) == "Lifetime usage: 100 tokens"
-        assert str(status.styles.dock) == "bottom"
+        # No screen-edge dock (a full terminal bar read as "a border around
+        # the app"); it sits with the rest of the content inside the card.
+        assert str(status.styles.dock) != "bottom"
+        assert card in status.ancestors
         assert len(passphrase) == 12
         assert passphrase.isdecimal()
         await pilot.pause()
+
+
+@pytest.mark.asyncio
+async def test_onboarding_is_a_transparent_card_over_the_live_app() -> None:
+    """The onboarding must be a compact card floating over the live app.
+
+    It must NOT fill the screen with an opaque/dimmed background (that read
+    as "a gray overlay over the app that blocks input").  The modal screen
+    stays transparent so the real app composites behind the centered setup
+    card, and the card is compact (auto height, capped) rather than a full
+    screen.
+    """
+
+    class OnboardingApp(App):
+        def on_mount(self) -> None:
+            self.push_screen(OnboardingModal(["defensive"], "defensive", []))
+
+    app = OnboardingApp()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        await pilot.pause()
+        screen = app.screen
+        # The modal screen spans the region but its background is transparent
+        # so the app behind stays visible, not a dimmed full-screen overlay.
+        assert screen.region.width == 80
+        assert screen.region.height == 24
+        assert screen.styles.background is not None
+        assert screen.styles.background.a < 0.05
+        # The form lives in a compact centered card, not a full-screen page.
+        card = screen.query_one("#onb-content")
+        assert card.styles.width.value == 76.0
+        assert card.styles.height.unit == Unit.AUTO
+        assert card.styles.max_height.value == 90.0
+        assert card.region.height < screen.region.height
+        # Escape reveals the app behind instead of trapping input.
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen.__class__.__name__ != "OnboardingModal"
+
+
+@pytest.mark.asyncio
+async def test_onboarding_clicks_use_native_control_focus() -> None:
+    """Pointer clicks focus the selected setup control without overrides."""
+    class OnboardingApp(App):
+        def on_mount(self) -> None:
+            self.push_screen(OnboardingModal(["defensive"], "defensive", []))
+
+    async with OnboardingApp().run_test(size=(100, 35)) as pilot:
+        await pilot.pause()
+        label = pilot.app.screen.query_one("#onb-label", Input)
+        checkbox = pilot.app.screen.query_one("#onb-generate-key", Checkbox)
+        await pilot.click(checkbox, offset=(1, 0))
+        await pilot.pause()
+        assert checkbox.has_focus
+        target = pilot.app.screen.query_one("#onb-target", Input)
+        await pilot.click(target, offset=(1, 0))
+        await pilot.pause()
+        assert target.has_focus
+        await pilot.press("x")
+        assert target.value == "x"
+        package = pilot.app.screen.query_one("#onb-pkg", Select)
+        await pilot.click(package, offset=(1, 0))
+        await pilot.pause()
+        assert package.expanded
+        assert package.has_focus_within
+        assert not label.has_focus
+
+
+@pytest.mark.asyncio
+async def test_config_modal_focuses_url_input() -> None:
+    """Settings opens ready for keyboard input, not with no focused widget."""
+    class ConfigApp(App):
+        AUTO_FOCUS = "#unrelated"
+
+        def on_mount(self) -> None:
+            self.push_screen(ConfigModal(
+                ["http://localhost:8080/v1", "model", "", 0.3, 4096],
+                [], "defensive"))
+
+    async with ConfigApp().run_test() as pilot:
+        await pilot.pause()
+        url = pilot.app.screen.query_one("#cfg-url", Input)
+        assert pilot.app.focused is url
 
 
 def _halgate_stub(chat_width_pct: int) -> SimpleNamespace:
@@ -304,6 +470,27 @@ async def test_chat_width_and_identity_follow_config() -> None:
         assert "8d3d4bd12df1" not in header
         assert "scope:defensive" in header
         assert "llm:remote-coder" in header
+
+
+@pytest.mark.asyncio
+async def test_terminal_blur_report_does_not_clear_chat_focus() -> None:
+    """A PTY's stray AppBlur must not disable keyboard input."""
+    app = HalgateApp(_halgate_stub(62))
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        chat_input = app.query_one("#chat-input", ChatInput)
+        assert app.focused is chat_input
+        app.post_message(events.AppBlur())
+        await pilot.pause()
+        assert app.focused is chat_input
+        assert app.app_focus is True
+
+
+def test_container_driver_ignores_pixel_mouse_negotiation() -> None:
+    """Container PTYs must retain Textual's cell-coordinate mouse mode."""
+    driver = object.__new__(_ContainerLinuxDriver)
+    # This needs no initialized driver state because the message is consumed.
+    driver.process_message(InBandWindowResize(supported=True, enabled=True))
 
 
 @pytest.mark.asyncio
