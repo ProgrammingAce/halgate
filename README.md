@@ -1,6 +1,6 @@
 # Halgate
 
-Halgate is a single-operator, local AI harness for authorized security
+Halgate is a local AI harness for authorized security
 research. It combines a terminal UI with target-scoped tools, approval gates,
 budgets, audit logs, and encrypted handling of discovered credentials.
 
@@ -23,11 +23,9 @@ one:
 
 ```sh
 cp config.example.yaml config.yaml
-export LLM_API_KEY="..."
 ```
 
-Update `config.yaml` with an LLM endpoint you control. It is ignored by Git;
-keep real API keys in environment variables instead of committing them.
+Update `config.yaml` with your local LLM endpoint you control.
 
 ## Run
 
@@ -52,8 +50,6 @@ docker compose up
 The container expects `config.yaml` (with LLM endpoints) and
 `scope_packages.yaml` in the project root and mounts them read-only; set
 `LLM_API_KEY` in the environment if `config.yaml` references `${LLM_API_KEY}`.
-The image has no `gpg` binary, so use `audit.crypto_backend: pgpy` for
-forensic audit.
 
 Overrides:
 
