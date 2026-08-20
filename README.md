@@ -42,10 +42,29 @@ non-root user (uid 1000); pick the host folder that stores the harness state
 (`.halgate_memory`, `.halgate_audit`, `.halgate_sessions`, `.halgate_evidence`)
 with `HALGATE_DATA_HOST` (default `./halgate-data`).
 
+### Build the image
+
+The image is built from the repository `Dockerfile`; build it as
+`halgate:latest` (override the tag with
+`HALGATE_IMAGE`); rebuild it whenever the code or `Dockerfile` changes. To
+build it standalone (for `podman run` or `docker run`):
+
+```sh
+docker build -t halgate:latest .        # or: podman build -t halgate:latest .
+```
+
+Two build-time arguments are available (`docker compose` forwards matching
+environment variables): `HALGATE_DATA_DIR` sets the in-container state root
+(default `/halgate`), and `EXTRA_TOOLS` installs extra assessment tools.
+
 ```sh
 mkdir -p halgate-data          # Podman needs the folder to exist; Docker creates it
-docker compose up
+# Run attached to a real terminal; the TUI needs this for keyboard and mouse input.
+docker compose run --rm --build halgate
 ```
+
+Do not start the TUI with detached Compose (`docker compose up -d`) or through
+a log viewer: those attach output but do not provide an interactive terminal.
 
 The container expects `config.yaml` (with LLM endpoints) and
 `scope_packages.yaml` in the project root and mounts them read-only; set
@@ -68,10 +87,12 @@ The in-container state root is the `HALGATE_DATA_DIR` build arg (default
 `/halgate`); keep it in sync between `Dockerfile` and `docker-compose.yml` if
 you change it.
 
-Example:
+Run the image directly (instead of `docker compose`), on a shared network:
+
 ```sh
+podman build -t halgate:latest .
 podman network create halnet
-podman run -it --rm --network=halnet --name halgate \
+podman run -it --rm --env TERM="${TERM:-xterm-256color}" --network=halnet --name halgate \
   -v "$PWD/halgate-data:/halgate" \
   -v "$PWD/config.yaml:/home/halgate/.config/halgate/config.yaml:ro" \
   -v "$PWD/scope_packages.yaml:/home/halgate/.config/halgate/scope_packages.yaml:ro" \

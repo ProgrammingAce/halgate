@@ -1,8 +1,8 @@
 .git/
-.harness_audit/
-.harness_evidence/
-.harness_memory/
-.harness_sessions/
+.halgate_audit/
+.halgate_evidence/
+.halgate_memory/
+.halgate_sessions/
 .venv/
 .pytest_cache/
 __pycache__/
