@@ -1,8 +1,8 @@
 # Halgate
 
-Halgate is a local AI harness for authorized security
-research. It combines a terminal UI with target-scoped tools, approval gates,
-budgets, audit logs, and encrypted handling of discovered credentials.
+Halgate is a local AI harness for performing security research. It combines a
+terminal UI with target-scoped tools, approval gates, budgets, audit logs, and
+encryption for managing discovered and injected secrets.
 
 ![Halgate terminal UI](assets/halgate-screenshot.png)
 
@@ -18,23 +18,27 @@ budgets, audit logs, and encrypted handling of discovered credentials.
 uv sync --extra dev
 ```
 
-Create your local configuration, then set the API key if your endpoint needs
-one:
+Create your local configuration by copying the example, then configure the AI
+endpoint:
 
 ```sh
 cp config.example.yaml config.yaml
 ```
 
-Update `config.yaml` with your local LLM endpoint you control.
+Update `config.yaml` with your local LLM endpoint.
 
-To retain encrypted credentials or forensic payloads, initialize a portable
-native key and store the displayed recovery phrase offline:
+To encrypt credentials or forensic payloads, the harness will ask you to create
+a key and store the displayed recovery phrase offline:
 
-```sh
-uv run halgate key init
-```
+### Encryption and recovery keys
 
-Use `halgate key backup <path>` to export its already-encrypted key envelope.
+`halgate key init` creates a random local root key and shows a recovery phrase
+only once. the root key encrypts discovered credentials and forensic audit
+payloads. It does not encrypt the app configuration or LLM API credentials.
+
+Keep the recovery phrase offline and store any encrypted key backup separately.
+Without both the key envelope and its phrase, encrypted records cannot be
+recovered.
 
 ## Run
 
@@ -43,6 +47,16 @@ uv run halgate --help
 uv run halgate --dry-run
 uv run pytest -q
 ```
+
+## Docker/Containerization
+
+Halgate supports containerization, but does not provide a default Docker config
+or Dockerfile. The choices around securing the environment this harness runs in
+should be carefully considered, as different configurations may lead to data
+loss, and that may or may not be intentional by the operator. Choices like
+running the container as rootless, or where and whether to store the output of
+an engagement in a volume cannot be simple defaults. Consider the type of
+engagement and research you're doing, and configure the environment accordingly.
 
 ## Safety
 

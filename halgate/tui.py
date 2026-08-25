@@ -1115,7 +1115,8 @@ class OnboardingModal(ModalScreen):
         except EncryptionError as e:
             self.app.notify(f"Couldn't create native key: {e}", severity="error")
             return
-        self.app.push_screen(RecoveryPhraseModal(phrase), self._phrase_saved)
+        self.app.push_screen(
+            RecoveryPhraseModal(phrase, self._key_file), self._phrase_saved)
 
     def _phrase_saved(self, stored: bool) -> None:
         self._key_ready = stored
@@ -1134,7 +1135,8 @@ class OnboardingModal(ModalScreen):
             self.app.notify(f"Couldn't replace native key: {e}", severity="error")
             return
         self._key_ready = False
-        self.app.push_screen(RecoveryPhraseModal(phrase), self._phrase_saved)
+        self.app.push_screen(
+            RecoveryPhraseModal(phrase, self._key_file), self._phrase_saved)
 
     class Manage(Message):
         pass
@@ -1224,9 +1226,10 @@ class RecoveryPhraseModal(ModalScreen):
     }
     """
 
-    def __init__(self, phrase: str):
+    def __init__(self, phrase: str, key_file: str | Path):
         super().__init__()
         self._phrase = phrase
+        self._key_file = Path(key_file)
 
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -1235,6 +1238,7 @@ class RecoveryPhraseModal(ModalScreen):
                    "anyone with it can decrypt your protected records."),
             Static(escape(self._phrase), id="recovery-phrase"),
             Button("Copy recovery phrase", id="recovery-copy"),
+            Button("Back up encrypted key", id="recovery-backup"),
             Checkbox("I stored this recovery phrase offline",
                      id="recovery-confirm"),
             Button("Continue", variant="warning", id="recovery-dismiss",
@@ -1254,8 +1258,64 @@ class RecoveryPhraseModal(ModalScreen):
             # HalgateApp provides OSC 52 plus a macOS pbcopy fallback, so this
             # path does not depend on terminal mouse selection/reporting.
             self.app._copy_text(self._phrase)  # type: ignore[attr-defined]
+        elif event.button.id == "recovery-backup":
+            self.app.push_screen(
+                KeyBackupModal(self._key_file), self._backup_selected)
         elif event.button.id == "recovery-dismiss":
             self.dismiss(True)
+
+    def _backup_selected(self, destination: str | None) -> None:
+        if not destination:
+            return
+        from .crypto import NativeCrypto
+        from .errors import EncryptionError
+        try:
+            NativeCrypto.backup(self._key_file, destination)
+        except EncryptionError as e:
+            self.app.notify(f"Couldn't back up encrypted key: {e}", severity="error")
+            return
+        self.app.notify(f"Encrypted key backup written to {destination}")
+
+
+class KeyBackupModal(ModalScreen):
+    """Choose a non-destructive destination for an encrypted key envelope."""
+
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+
+    CSS = """
+    KeyBackupModal { align: center middle; background: transparent; }
+    KeyBackupModal #key-backup-content {
+        width: 76; max-width: 96%; height: auto; background: $surface;
+        border: tall $accent; padding: 1 2;
+    }
+    KeyBackupModal Button { width: 100%; }
+    """
+
+    def __init__(self, key_file: str | Path):
+        super().__init__()
+        key_name = Path(key_file).name
+        self._default_path = str(Path.home() / "Downloads" / f"{key_name}.backup")
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("[bold]Back up encrypted key[/bold]"),
+            Static("Choose a separate location for the encrypted key envelope. "
+                   "Keep this file separate from the recovery phrase."),
+            Input(value=self._default_path, id="key-backup-path"),
+            Button("Create backup", variant="success", id="key-backup-save"),
+            Button("Cancel", id="key-backup-cancel"),
+            id="key-backup-content",
+        )
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "key-backup-save":
+            destination = self.query_one("#key-backup-path", Input).value.strip()
+            self.dismiss(destination or None)
+        elif event.button.id == "key-backup-cancel":
+            self.dismiss(None)
 
 
 class KeyResetModal(ModalScreen):
