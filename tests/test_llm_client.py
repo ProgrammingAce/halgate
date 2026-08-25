@@ -3,8 +3,10 @@ import json
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from halgate.config import Config, EndpointConfig, LLMConfig
+from halgate.errors import ConfigError
 from halgate.llm.client import EndpointHTTPError, OpenAIClient
 from halgate.llm.router import LLMRouter
 
@@ -24,6 +26,50 @@ def httpx_client(resp_data: dict | None = None, status: int = 200) -> OpenAIClie
 
     transport = httpx.MockTransport(handler)
     return OpenAIClient(endpoint, transport=transport)
+
+
+def _capturing_client(endpoint: EndpointConfig) -> tuple[OpenAIClient, dict[str, str | None]]:
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["authorization"] = request.headers.get("authorization")
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+        })
+
+    return OpenAIClient(endpoint, transport=httpx.MockTransport(handler)), captured
+
+
+def test_config_strips_api_key_whitespace():
+    assert make_endpoint(api_key="  k1  ").api_key == "k1"
+
+
+def test_config_rejects_api_key_with_embedded_newline():
+    with pytest.raises(ValidationError, match="api_key"):
+        make_endpoint(api_key="key\nother")
+
+
+@pytest.mark.asyncio
+async def test_empty_api_key_sends_no_auth_header():
+    client, captured = _capturing_client(make_endpoint(api_key=""))
+    await client.complete([])
+    assert captured["authorization"] is None
+    await client.close()
+
+
+@pytest.mark.asyncio
+async def test_api_key_sent_as_bearer_header():
+    client, captured = _capturing_client(make_endpoint(api_key="sekret"))
+    await client.complete([])
+    assert captured["authorization"] == "Bearer sekret"
+    await client.close()
+
+
+def test_client_rejects_api_key_with_embedded_newline():
+    endpoint = make_endpoint()
+    endpoint.api_key = "key\nother"
+    with pytest.raises(ConfigError, match="api_key"):
+        OpenAIClient(endpoint)
 
 
 @pytest.mark.asyncio

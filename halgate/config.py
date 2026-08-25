@@ -45,6 +45,16 @@ class EndpointConfig(BaseModel):
     model_context: int = 32768
     output_reserve: int = 4096
 
+    @field_validator("api_key")
+    @classmethod
+    def _validate_api_key(cls, value: str) -> str:
+        """Normalize API keys and reject values unsafe for HTTP headers."""
+        if any(ord(char) < 0x20 or ord(char) == 0x7f or ord(char) > 0x7f
+               for char in value):
+            raise ValueError(
+                "api_key must contain only printable ASCII characters")
+        return value.strip()
+
 
 class LLMConfig(BaseModel):
     active: str

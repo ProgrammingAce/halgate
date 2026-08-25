@@ -9,8 +9,21 @@ from typing import Awaitable, Callable
 import httpx
 
 from ..config import EndpointConfig
+from ..errors import ConfigError
 
 _MAX_ERROR_BODY_BYTES = 8_192
+
+
+def _auth_headers(cfg: EndpointConfig) -> dict[str, str]:
+    """Build a safe optional bearer-auth header for an endpoint."""
+    key = cfg.api_key
+    if any(ord(char) < 0x20 or ord(char) == 0x7f or ord(char) > 0x7f
+           for char in key):
+        raise ConfigError("LLM endpoint api_key must contain only printable ASCII characters")
+    key = key.strip()
+    if not key:
+        return {}
+    return {"Authorization": f"Bearer {key}"}
 
 
 class EndpointHTTPError(httpx.HTTPStatusError):
@@ -48,7 +61,7 @@ class OpenAIClient:
         # transport injection point (tests use httpx.MockTransport)
         self._http = httpx.AsyncClient(
             base_url=cfg.base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {cfg.api_key}"},
+            headers=_auth_headers(cfg),
             timeout=httpx.Timeout(cfg.timeout, connect=10),
             follow_redirects=False,
             transport=transport,
