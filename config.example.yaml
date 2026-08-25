@@ -14,10 +14,10 @@ llm:
 scope:
   package: "defensive"
 
-# Do not enable forensic encryption until a verified recipient is configured.
+# Initialize encryption with `halgate key init` before enabling forensics.
 audit:
   forensic_enabled: false
-  gpg_recipient: ""
+  encryption_key_file: ".halgate_audit/native-key.json"
 
 # Set only when an authorized target must reach a callback listener.
 callback: {}

@@ -8,13 +8,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .errors import ConfigError
 from .scope import ScopePackage
 
 _ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
-_FINGERPRINT_RE = re.compile(r"^[0-9A-Fa-f]{40}$")  # full 40-hex OpenPGP fingerprint
 
 
 def _expand_env(value: Any, where: str) -> Any:
@@ -138,24 +137,23 @@ class BudgetsConfig(BaseModel):
 class AuditConfig(BaseModel):
     dir: str = ".halgate_audit"
     rotate_bytes: int = 52428800
-    gpg_recipient: str = ""
-    gpg_homedir: str | None = None
-    gpg_executable: str = "gpg"
-    crypto_backend: Literal["gpg", "pgpy"] = "gpg"
-    pgpy_public_key: str | None = None
-    pgpy_private_key: str | None = None
-    pgpy_passphrase_env: str | None = None
+    encryption_key_file: str = ".halgate_audit/native-key.json"
     forensic_enabled: bool = True
 
-    @field_validator("gpg_recipient")
+    @model_validator(mode="before")
     @classmethod
-    def _validate_fingerprint(cls, v: str) -> str:
-        if v == "":
-            return v
-        if not _FINGERPRINT_RE.match(v or ""):
-            raise ValueError(
-                "audit.gpg_recipient must be a full 40-hex OpenPGP fingerprint")
-        return v.upper()
+    def _reject_openpgp_settings(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            legacy = sorted(set(value).intersection({
+                "gpg_recipient", "gpg_homedir", "gpg_executable",
+                "crypto_backend", "pgpy_public_key", "pgpy_private_key",
+                "pgpy_passphrase_env",
+            }))
+            if legacy:
+                raise ValueError(
+                    "legacy OpenPGP audit settings are unsupported; initialize "
+                    "native encryption with 'halgate key init'")
+        return value
 
 
 class SessionsConfig(BaseModel):

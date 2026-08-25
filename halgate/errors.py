@@ -13,8 +13,8 @@ class ScopeError(HalgateError):
     pass
 
 
-class GpgError(HalgateError):
-    pass
+class EncryptionError(HalgateError):
+    """Native encryption is unavailable, invalid, or has been tampered with."""
 
 
 class ForensicEncryptionError(HalgateError):

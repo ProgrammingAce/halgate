@@ -5,13 +5,13 @@ from halgate.audit.logger import AuditLogger
 from halgate.memory.keystore import KeyStore
 
 
-def test_disabled_forensics_does_not_resolve_gpg_at_startup(config, instance_id):
+def test_disabled_forensics_does_not_unlock_native_key_at_startup(config, instance_id):
     config.audit.forensic_enabled = False
-    config.audit.gpg_executable = "gpg-not-installed-for-test"
+    config.audit.encryption_key_file = str(config.audit.dir) + "/missing-key.json"
 
     logger = AuditLogger(config.audit, "no-gpg", instance_id)
     keystore = KeyStore(config.audit, instance_id)
 
     logger.session_start([], "test", resumed=False)
-    assert logger._gpg is None
-    assert keystore._gpg is None
+    assert logger._crypto is None
+    assert keystore._crypto is None

@@ -56,22 +56,23 @@ def test_missing_env_var_fails_at_startup(tmp_path, monkeypatch):
         load_config(p)
 
 
-def test_short_key_id_rejected(tmp_path):
+def test_legacy_openpgp_config_rejected(tmp_path):
     p = tmp_path / "cfg.yaml"
     p.write_text(
         "llm:\n  active: a\n  endpoints:\n    - {id: a, base_url: http://x, model: m}\n"
         'audit:\n  gpg_recipient: "ABCDEF1234"\n')
-    with pytest.raises(ConfigError, match="fingerprint|gpg_recipient|invalid"):
+    with pytest.raises(ConfigError, match="legacy OpenPGP|unsupported"):
         load_config(p)
 
 
-def test_empty_gpg_recipient_explicitly_disables_encryption(tmp_path):
+def test_empty_gpg_recipient_is_rejected(tmp_path):
     p = tmp_path / "cfg.yaml"
     p.write_text(
         "llm:\n  active: a\n  endpoints:\n"
         "    - {id: a, base_url: http://x, model: m}\n"
         'audit:\n  gpg_recipient: ""\n')
-    assert load_config(p).audit.gpg_recipient == ""
+    with pytest.raises(ConfigError, match="legacy OpenPGP|unsupported"):
+        load_config(p)
 
 
 def test_unknown_active_endpoint_rejected(tmp_path):

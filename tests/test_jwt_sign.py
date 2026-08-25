@@ -170,8 +170,7 @@ async def test_rejects_raw_secrets_and_unknown_refs() -> None:
 async def test_keystore_failure_is_fail_closed(config) -> None:
     good = KeyStore(config.audit, "jwt-keystore")
     cred = await good.store("jwt_signing_key", KEY, "test", None)
-    from tests.conftest import BROKEN_GPG
-    config.audit.gpg_executable = str(BROKEN_GPG)
+    config.audit.encryption_key_file = str(config.audit.dir) + "/missing-key.json"
     broken = KeyStore(config.audit, "jwt-keystore")
     ctx = _ctx({"offensive": _signing_package()})
     ctx.extra["keystore"] = broken

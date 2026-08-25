@@ -27,6 +27,15 @@ cp config.example.yaml config.yaml
 
 Update `config.yaml` with your local LLM endpoint you control.
 
+To retain encrypted credentials or forensic payloads, initialize a portable
+native key and store the displayed recovery phrase offline:
+
+```sh
+uv run halgate key init
+```
+
+Use `halgate key backup <path>` to export its already-encrypted key envelope.
+
 ## Run
 
 ```sh

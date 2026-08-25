@@ -49,16 +49,14 @@ def test_forensic_payload_encrypted_and_linked(logger, config):
     logger.user_input("redacted-only", raw=raw_text)
     entry = logger.last_entry()
     ref = entry["payload"]["_forensic"]
-    assert ref["recipient"] == config.audit.gpg_recipient
+    assert ref["encryption_version"] == 1
     payload_path = logger.path.parent / ref["path"]
     blob = payload_path.read_bytes()
     assert AWS_KEY not in blob.decode(errors="replace")
-    assert b"BEGIN PGP MESSAGE" in blob
-    # decrypt round-trips through the local (fake) agent
-    import asyncio
-    from halgate.gpg import Gpg
-    gpg = Gpg(config.audit.gpg_recipient, None, config.audit.gpg_executable)
-    out = asyncio.run(gpg.decrypt(blob)).decode()
+    assert b'"version":1' in blob
+    from halgate.crypto import NativeCrypto
+    out = NativeCrypto(config.audit.encryption_key_file).decrypt_sync(
+        blob, f"forensic:{logger._instance_id}:{logger.session_id}:{entry['seq']}").decode()
     assert AWS_KEY in out
 
 
@@ -159,9 +157,9 @@ def test_decrypt_payload_round_trip_and_audit_event(logger, config, instance_id)
 def test_decrypt_payload_missing_seq_raises(logger, config, instance_id):
     import asyncio
     from halgate.audit.replay import decrypt_payload
-    from halgate.errors import GpgError
+    from halgate.errors import EncryptionError
     logger.session_start([], "llm", resumed=False)
-    with pytest.raises(GpgError):
+    with pytest.raises(EncryptionError):
         asyncio.run(decrypt_payload(
             logger.path, config.audit, instance_id, "sess-audit-1", 99, None))
 

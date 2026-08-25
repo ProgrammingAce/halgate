@@ -957,15 +957,15 @@ class OnboardingModal(ModalScreen):
     AUTO_FOCUS = "#onb-label"
 
     def __init__(self, packages: list[str], default_pkg: str,
-                 sessions: list[dict], lifetime_usage: str = ""):
+                 sessions: list[dict], lifetime_usage: str = "",
+                 key_file: str | None = None):
         super().__init__()
         self._packages = packages
         self._default_pkg = default_pkg
         self._sessions = sessions
         self._lifetime_usage = lifetime_usage
-        # A numeric value is easy to replace manually while still meeting the
-        # OpenPGP generator's minimum passphrase length.
-        self._generated_key_passphrase = f"{secrets.randbelow(10 ** 12):012d}"
+        self._key_file = Path(key_file).expanduser() if key_file else None
+        self._key_ready = self._key_file is None
 
     CSS = """
     OnboardingModal {
@@ -1036,11 +1036,7 @@ class OnboardingModal(ModalScreen):
             Static("  Scope package:"),
             Select([(p, p) for p in self._packages],
                    value=self._default_pkg, compact=True, id="onb-pkg"),
-            Checkbox("Generate a protected OpenPGP keypair in Downloads",
-                     id="onb-generate-key"),
-            Input(value=self._generated_key_passphrase,
-                  placeholder="Key passphrase (12+ characters)", password=True,
-                  id="onb-key-passphrase"),
+            *self._key_controls(),
             *([Vertical(
                     *(Button("Continue: " + s['name'],
                              id=f"onb-cont-{s['id']}")
@@ -1048,9 +1044,12 @@ class OnboardingModal(ModalScreen):
                     id="onb-cont",
              )] if self._sessions else []),
             Vertical(
-                Button("Start Engagement", variant="success", id="onb-start"),
+                Button("Start Engagement", variant="success", id="onb-start",
+                       disabled=self._key_file is not None and not self._key_file.exists()),
                 Button("Manage Sessions", variant="warning", id="onb-manage"),
-                Button("Skip", variant="primary", id="onb-skip"),
+                *([Button("Generate new encryption key", variant="warning",
+                          id="onb-key-generate")]
+                  if self._key_file is not None else []),
                 id="onb-buttons",
             ),
             Static(self._lifetime_usage, id="onb-lifetime"),
@@ -1060,8 +1059,6 @@ class OnboardingModal(ModalScreen):
     def on_button_pressed(self, e: Button.Pressed) -> None:
         if e.button.id == "onb-start":
             self._do_start()
-        elif e.button.id == "onb-skip":
-            self.dismiss()
         elif e.button.id == "onb-manage":
             self.post_message(OnboardingModal.Manage())
             self.dismiss()
@@ -1069,6 +1066,11 @@ class OnboardingModal(ModalScreen):
             sid = e.button.id.removeprefix("onb-cont-")
             self.post_message(OnboardingModal.Continued(sid))
             self.dismiss()
+        elif e.button.id == "onb-key-generate":
+            if self._key_file and self._key_file.exists():
+                self.app.push_screen(KeyResetModal(), self._reset_key)
+            else:
+                self._create_key()
 
     def _do_start(self) -> None:
         label = _safe_ui_label(
@@ -1077,32 +1079,220 @@ class OnboardingModal(ModalScreen):
         if not target:
             return
         pkg = self.query_one("#onb-pkg", Select).value
-        generate_key = self.query_one("#onb-generate-key", Checkbox).value
-        passphrase = self.query_one("#onb-key-passphrase", Input).value
-        if generate_key and len(passphrase) < 12:
-            self.query_one("#onb-key-passphrase", Input).focus()
-            return
+        if self._key_file is not None:
+            if self._key_file.exists() and not self._key_ready:
+                self.app.push_screen(
+                    ExistingKeyWarningModal(), self._existing_key_response)
+                return
+            if not self._key_ready:
+                return
         self.post_message(OnboardingModal.Started(
-            label, target, pkg, generate_key, passphrase))
+            label, target, pkg))
         self.dismiss()
+
+    def _existing_key_response(self, result: str | None) -> None:
+        if result == "confirmed":
+            self._key_ready = True
+            self._do_start()
+        elif result == "replace":
+            self.app.push_screen(KeyResetModal(), self._reset_key)
+
+    def _key_controls(self) -> list:
+        if self._key_file is None:
+            return []
+        if self._key_file.exists():
+            return []
+        return [
+            Static("A native encryption key is required before starting a new "
+                   "engagement."),
+        ]
+
+    def _create_key(self) -> None:
+        from .crypto import NativeCrypto
+        from .errors import EncryptionError
+        try:
+            phrase = NativeCrypto.initialize(self._key_file)
+        except EncryptionError as e:
+            self.app.notify(f"Couldn't create native key: {e}", severity="error")
+            return
+        self.app.push_screen(RecoveryPhraseModal(phrase), self._phrase_saved)
+
+    def _phrase_saved(self, stored: bool) -> None:
+        self._key_ready = stored
+        if stored:
+            self.query_one("#onb-start", Button).disabled = False
+            self._do_start()
+
+    def _reset_key(self, confirmed: bool) -> None:
+        if not confirmed:
+            return
+        from .crypto import NativeCrypto
+        from .errors import EncryptionError
+        try:
+            phrase, _ = NativeCrypto.archive_and_replace(self._key_file)
+        except EncryptionError as e:
+            self.app.notify(f"Couldn't replace native key: {e}", severity="error")
+            return
+        self._key_ready = False
+        self.app.push_screen(RecoveryPhraseModal(phrase), self._phrase_saved)
 
     class Manage(Message):
         pass
 
     class Started(Message):
-        def __init__(self, label: str, target: str, package: str,
-                     generate_key: bool = False, key_passphrase: str = ""):
+        def __init__(self, label: str, target: str, package: str):
             self.label = label
             self.target = target
             self.package = package
-            self.generate_key = generate_key
-            self.key_passphrase = key_passphrase
             super().__init__()
 
     class Continued(Message):
         def __init__(self, session_id: str):
             self.session_id = session_id
             super().__init__()
+
+
+class ExistingKeyWarningModal(ModalScreen):
+    """Require explicit recovery-phrase acknowledgement for an existing key."""
+
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+
+    CSS = """
+    ExistingKeyWarningModal { align: center middle; background: transparent; }
+    ExistingKeyWarningModal #existing-key-content {
+        width: 76; max-width: 96%; height: auto; background: $surface;
+        border: tall $warning; padding: 1 2;
+    }
+    ExistingKeyWarningModal Button { width: 100%; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("[bold]Recovery phrase required[/bold]"),
+            Static("This engagement may retain encrypted credentials and forensic "
+                   "records. You will need this key's recovery phrase to access "
+                   "them after this session."),
+            Checkbox("I have the recovery phrase", id="existing-key-confirm"),
+            Button("Continue", variant="warning", id="existing-key-continue",
+                   disabled=True),
+            Button("Generate new encryption key", variant="error",
+                   id="existing-key-replace"),
+            id="existing-key-content",
+        )
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "existing-key-confirm":
+            self.query_one("#existing-key-continue", Button).disabled = not event.value
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "existing-key-continue":
+            self.dismiss("confirmed")
+        elif event.button.id == "existing-key-replace":
+            self.dismiss("replace")
+
+
+class RecoveryPhraseModal(ModalScreen):
+    """Blocking one-time display for a newly-created native recovery phrase."""
+
+    BINDINGS = [
+        ("escape", "dismiss", "Cancel"),
+    ]
+
+    CSS = """
+    RecoveryPhraseModal {
+        align: center middle;
+        background: transparent;
+    }
+    RecoveryPhraseModal #recovery-content {
+        width: 76;
+        max-width: 96%;
+        height: auto;
+        background: $surface;
+        border: tall $warning;
+        padding: 1 2;
+    }
+    RecoveryPhraseModal #recovery-phrase {
+        margin: 1 0;
+        color: $warning;
+        text-style: bold;
+    }
+    RecoveryPhraseModal Button {
+        width: 100%;
+    }
+    """
+
+    def __init__(self, phrase: str):
+        super().__init__()
+        self._phrase = phrase
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("[bold]Store your recovery phrase now[/bold]"),
+            Static("This is the only copy Halgate will display. Keep it offline; "
+                   "anyone with it can decrypt your protected records."),
+            Static(escape(self._phrase), id="recovery-phrase"),
+            Button("Copy recovery phrase", id="recovery-copy"),
+            Checkbox("I stored this recovery phrase offline",
+                     id="recovery-confirm"),
+            Button("Continue", variant="warning", id="recovery-dismiss",
+                   disabled=True),
+            id="recovery-content",
+        )
+
+    def action_dismiss(self) -> None:
+        self.dismiss(False)
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "recovery-confirm":
+            self.query_one("#recovery-dismiss", Button).disabled = not event.value
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "recovery-copy":
+            # HalgateApp provides OSC 52 plus a macOS pbcopy fallback, so this
+            # path does not depend on terminal mouse selection/reporting.
+            self.app._copy_text(self._phrase)  # type: ignore[attr-defined]
+        elif event.button.id == "recovery-dismiss":
+            self.dismiss(True)
+
+
+class KeyResetModal(ModalScreen):
+    """Require an explicit acknowledgement before archiving an active key."""
+
+    CSS = """
+    KeyResetModal { align: center middle; background: transparent; }
+    KeyResetModal #key-reset-content {
+        width: 76; max-width: 96%; height: auto; background: $surface;
+        border: tall $error; padding: 1 2;
+    }
+    KeyResetModal Button { width: 100%; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("[bold red]Replace encryption key[/bold red]"),
+            Static("The existing key will be archived beside this key file. "
+                   "Records encrypted with it require its original recovery "
+                   "phrase. Type RESET to continue."),
+            Input(placeholder="Type RESET", id="key-reset-input"),
+            Button("Archive key and create replacement", variant="error",
+                   id="key-reset-confirm", disabled=True),
+            Button("Cancel", id="key-reset-cancel"),
+            id="key-reset-content",
+        )
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "key-reset-input":
+            self.query_one("#key-reset-confirm", Button).disabled = (
+                event.value != "RESET")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "key-reset-confirm":
+            self.dismiss(True)
+        elif event.button.id == "key-reset-cancel":
+            self.dismiss(False)
 
 
 class ContinueModal(ModalScreen):
@@ -2324,24 +2514,6 @@ class HalgateApp(App):
     def on_onboarding_modal_started(
             self, msg: OnboardingModal.Started) -> None:
         from .scope import Engagement, new_engagement_id
-        if msg.generate_key:
-            from .errors import GpgError
-            from .openpgp import generate_keypair
-            try:
-                pair = generate_keypair(Path.home() / "Downloads", msg.label,
-                                        msg.key_passphrase)
-                self.h.use_pgpy_recipient(
-                    pair.fingerprint, str(pair.public_key_path),
-                    str(pair.private_key_path), msg.key_passphrase)
-            except (GpgError, ValueError) as e:
-                self._chat.add_agent(f"[red]OpenPGP key generation failed: {escape(str(e))}[/red]")
-                return
-            self._chat.add_agent(
-                "[yellow]Generated protected OpenPGP keypair. Public key: "
-                f"{escape(str(pair.public_key_path))}; private key: "
-                f"{escape(str(pair.private_key_path))}. This session can use it "
-                "for encrypted-secret operations, including HS256 signing. Keep "
-                "the private key and passphrase secure.[/yellow]")
         eid = new_engagement_id()
         eng = Engagement(id=eid, label=msg.label, target=msg.target,
                           package=msg.package)
@@ -2396,7 +2568,8 @@ class HalgateApp(App):
             self.h.config.sessions.dir)
         self.push_screen(OnboardingModal(
             packages, default_pkg, sessions,
-            self.h.lifetime_tokens.status_line()))
+            self.h.lifetime_tokens.status_line(),
+            self.h.config.audit.encryption_key_file))
 
     def on_sessions_modal_resumed(
             self, msg: SessionsModal.Resumed) -> None:

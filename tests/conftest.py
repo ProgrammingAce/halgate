@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -8,18 +7,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from halgate.config import Config, load_config, load_packages  # noqa: E402
-
-TEST_FINGERPRINT = "0123456789ABCDEF0123456789ABCDEF01234567"
-FAKE_GPG = REPO_ROOT / "tests" / "fixtures" / "fake_gpg.py"
-BROKEN_GPG = REPO_ROOT / "tests" / "fixtures" / "broken_gpg.py"
-
-
-@pytest.fixture(autouse=True, scope="session")
-def _gpg_executables():
-    FAKE_GPG.chmod(0o755)
-    BROKEN_GPG.chmod(0o755)
-    yield
-
 
 @pytest.fixture
 def instance_id() -> str:
@@ -33,7 +20,7 @@ def packages():
 
 @pytest.fixture
 def config(tmp_path, instance_id, monkeypatch) -> Config:
-    """Config pointing all state dirs at tmp_path, fake gpg, test fingerprint."""
+    """Config pointing all state dirs at tmp_path with a native test key."""
     monkeypatch.setenv("LLM_API_KEY", "test-key")
     cfg = load_config(REPO_ROOT / "config.example.yaml", REPO_ROOT / "scope_packages.yaml")
     cfg.memory.dir = str(tmp_path / "memory")
@@ -41,20 +28,18 @@ def config(tmp_path, instance_id, monkeypatch) -> Config:
     cfg.safety.dry_run = False
     cfg.audit.dir = str(tmp_path / "audit")
     cfg.audit.forensic_enabled = True
-    cfg.audit.gpg_recipient = TEST_FINGERPRINT
-    cfg.audit.gpg_homedir = None
-    cfg.audit.gpg_executable = str(FAKE_GPG)
+    cfg.audit.encryption_key_file = str(tmp_path / "native-key.json")
+    from halgate.crypto import NativeCrypto
+    NativeCrypto.initialize(cfg.audit.encryption_key_file)
     cfg.sessions.dir = str(tmp_path / "sessions")
     cfg.evidence.dir = str(tmp_path / "evidence")
-    # fake gpg validates against FAKE_GPG_KEY
-    os.environ["FAKE_GPG_KEY"] = TEST_FINGERPRINT
     return cfg
 
 
 @pytest.fixture
 def broken_gpg_config(tmp_path, config) -> Config:
-    """Same config but the gpg executable always fails (fail-closed tests)."""
-    config.audit.gpg_executable = str(BROKEN_GPG)
+    """Same config with no key envelope (fail-closed tests)."""
+    config.audit.encryption_key_file = str(tmp_path / "missing-key.json")
     return config
 
 

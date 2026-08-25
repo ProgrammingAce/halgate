@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 
 from ..config import AuditConfig
-from ..errors import GpgError
-from ..openpgp import backend_from_config
+from ..crypto import NativeCrypto
+from ..errors import EncryptionError
 
 
 def session_log_path(audit_dir: str, instance_id: str | None,
@@ -77,24 +77,27 @@ def search(log_path: Path, event: str = "", key: str = "",
 async def decrypt_payload(log_path: Path, audit_cfg: AuditConfig,
                           instance_id: str, session_id: str, seq: int,
                           logger) -> str:
-    """Decrypt one forensic payload through the local GPG agent.
+    """Decrypt one forensic payload using the native recovery key.
 
     Only the access event is logged (never plaintext to audit/LLM).
     """
     events = load_events(log_path)
     target = next((e for e in events if e.get("seq") == seq), None)
     if target is None:
-        raise GpgError(f"no event with seq {seq}")
+        raise EncryptionError(f"no event with seq {seq}")
     ref = target.get("payload", {}).get("_forensic")
     if ref is None:
-        raise GpgError(f"event {seq} has no forensic payload")
+        raise EncryptionError(f"event {seq} has no forensic payload")
     base = log_path.parent
     payload_path = base / ref["path"]
     if not payload_path.exists():
-        raise GpgError(f"forensic payload missing: {ref['path']}")
-    gpg = backend_from_config(audit_cfg)
+        raise EncryptionError(f"forensic payload missing: {ref['path']}")
+    if not ref.get("encryption_version"):
+        raise EncryptionError("legacy OpenPGP forensic payloads are unsupported")
+    crypto = NativeCrypto(audit_cfg.encryption_key_file)
     blob = payload_path.read_bytes()
-    plaintext = (await gpg.decrypt(blob)).decode(errors="replace")
+    plaintext = crypto.decrypt_sync(
+        blob, f"forensic:{instance_id}:{session_id}:{seq}").decode(errors="replace")
     if logger is not None:
         logger.secret_reveal(f"seq:{seq}")
     return plaintext

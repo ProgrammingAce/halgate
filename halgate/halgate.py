@@ -462,38 +462,6 @@ class Halgate:
         self.audit.session_start([e.id for e in self.engagements],
                                  self.router.active_endpoint.id, resumed=True)
 
-    def use_pgpy_recipient(self, fingerprint: str, public_key_path: str,
-                           private_key_path: str | None = None,
-                           passphrase: str | None = None) -> None:
-        """Activate a PGPy recipient for this session.
-
-        This is restricted to a fresh keystore: switching recipients after
-        secrets have been stored would make those records unrecoverable.  A
-        private key and passphrase make the PGPy keystore usable for secret
-        reveal operations, including HMAC JWT signing.  The passphrase is kept
-        only in this process environment, never in config or checkpoints.
-        """
-        if self._keystore and self._keystore.known_ids():
-            raise ValueError("cannot switch OpenPGP recipients after secrets were stored")
-        if bool(private_key_path) != bool(passphrase):
-            raise ValueError("PGPy private key and passphrase must be supplied together")
-        passphrase_env = None
-        if passphrase:
-            passphrase_env = f"HALGATE_PGPY_PASSPHRASE_{self.session_id.upper()}"
-            os.environ[passphrase_env] = passphrase
-        self.config.audit.crypto_backend = "pgpy"
-        self.config.audit.gpg_recipient = fingerprint
-        self.config.audit.pgpy_public_key = public_key_path
-        self.config.audit.pgpy_private_key = private_key_path
-        self.config.audit.pgpy_passphrase_env = passphrase_env
-        self.audit = _make_audit(self.config, self.session_id, self.instance_id)
-        self.registry.ctx.extra["audit"] = self.audit
-        self.safety._audit = self.audit
-        from .memory.keystore import KeyStore
-        self._keystore = KeyStore(self.config.audit, self.instance_id or "default")
-        self._redactor = Redactor(self._keystore)
-        self.registry.ctx.extra["keystore"] = self._keystore
-
     def _provision_scratch_dirs(self) -> None:
         for engagement in self.engagements:
             self._provision_scratch_dir(engagement)

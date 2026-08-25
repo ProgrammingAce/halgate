@@ -115,7 +115,7 @@ async def test_onboarding_modal_tab_reaches_fields_and_buttons() -> None:
             await pilot.pause()
             visited.append(pilot.app.focused.id)
         assert "onb-target" in visited
-        assert "onb-start" in visited
+        assert "onb-key-generate" in visited
 
 
 @pytest.mark.asyncio
@@ -338,14 +338,11 @@ async def test_onboarding_lifetime_usage_lives_inside_the_setup_card() -> None:
         await pilot.pause()
         status = app.screen.query_one("#onb-lifetime")
         card = app.screen.query_one("#onb-content")
-        passphrase = app.screen.query_one("#onb-key-passphrase", Input).value
         assert str(status.render()) == "Lifetime usage: 100 tokens"
         # No screen-edge dock (a full terminal bar read as "a border around
         # the app"); it sits with the rest of the content inside the card.
         assert str(status.styles.dock) != "bottom"
         assert card in status.ancestors
-        assert len(passphrase) == 12
-        assert passphrase.isdecimal()
         await pilot.pause()
 
 
@@ -390,17 +387,21 @@ async def test_onboarding_is_a_transparent_card_over_the_live_app() -> None:
 @pytest.mark.asyncio
 async def test_onboarding_clicks_use_native_control_focus() -> None:
     """Pointer clicks focus the selected setup control without overrides."""
+    key_dir = tempfile.TemporaryDirectory()
+    key_file = Path(key_dir.name) / "native-key.json"
+    from halgate.crypto import NativeCrypto
+    NativeCrypto.initialize(key_file)
+
     class OnboardingApp(App):
         def on_mount(self) -> None:
-            self.push_screen(OnboardingModal(["defensive"], "defensive", []))
+            self.push_screen(OnboardingModal(
+                ["defensive"], "defensive", [], key_file=str(key_file)))
 
     async with OnboardingApp().run_test(size=(100, 35)) as pilot:
         await pilot.pause()
         label = pilot.app.screen.query_one("#onb-label", Input)
-        checkbox = pilot.app.screen.query_one("#onb-generate-key", Checkbox)
-        await pilot.click(checkbox, offset=(1, 0))
-        await pilot.pause()
-        assert checkbox.has_focus
+        start = pilot.app.screen.query_one("#onb-start", Button)
+        assert not start.disabled
         target = pilot.app.screen.query_one("#onb-target", Input)
         await pilot.click(target, offset=(1, 0))
         await pilot.pause()
@@ -413,6 +414,16 @@ async def test_onboarding_clicks_use_native_control_focus() -> None:
         assert package.expanded
         assert package.has_focus_within
         assert not label.has_focus
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.click(start)
+        await pilot.pause()
+        assert pilot.app.screen.query_one(
+            "#existing-key-confirm", Checkbox)
+        continue_button = pilot.app.screen.query_one(
+            "#existing-key-continue", Button)
+        assert continue_button.disabled
+    key_dir.cleanup()
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,7 @@ def _make_parser() -> argparse.ArgumentParser:
     audit_parser = sub.add_parser("audit", help="Audit log commands")
     mem_parser = sub.add_parser("memory", help="Memory commands")
     sec_parser = sub.add_parser("secret", help="Credential keystore commands")
+    key_parser = sub.add_parser("key", help="Native encryption-key commands")
     ev_parser = sub.add_parser("evidence", help="Evidence commands")
     fin_parser = sub.add_parser("finding", help="Finding commands")
     inv_parser = sub.add_parser("inventory", help="Inventory commands")
@@ -65,6 +66,14 @@ def _make_parser() -> argparse.ArgumentParser:
     ad.add_argument("session_id")
     ad.add_argument("--seq", type=int, required=True,
                     help="Audit event sequence number to decrypt")
+
+    key_sp = key_parser.add_subparsers(dest="key_cmd")
+    key_sp.add_parser("init", help="Create a native key and display its recovery phrase")
+    kb = key_sp.add_parser("backup", help="Export the encrypted key envelope")
+    kb.add_argument("path")
+    kr = key_sp.add_parser("restore", help="Restore an encrypted key envelope")
+    kr.add_argument("path")
+    kr.add_argument("--replace", action="store_true")
 
     # memory sub-subcommands
     mem_sp = mem_parser.add_subparsers(dest="memory_cmd")
@@ -142,7 +151,7 @@ def main() -> int:
         config.safety.dry_run = True
 
     # subcommand dispatch
-    if args.command in ("audit", "memory", "secret", "evidence",
+    if args.command in ("audit", "memory", "secret", "key", "evidence",
                         "finding", "inventory", "budget", "session"):
         return _handle_subcommand(args, config)
 
@@ -617,6 +626,9 @@ def _handle_subcommand(args, config) -> int:
     elif args.command == "secret":
         _handle_secret(args, config, instance)
         return 0
+    elif args.command == "key":
+        _handle_key(args, config)
+        return 0
     elif args.command == "evidence":
         _handle_evidence(args, config)
         return 0
@@ -662,16 +674,40 @@ def _handle_audit(args, config, instance) -> None:
         for e in events:
             print(json.dumps(e, indent=2, default=str))
     elif args.audit_cmd == "decrypt":
-        from .errors import GpgError
+        from .errors import EncryptionError
         from .audit.logger import AuditLogger
         audit_log = AuditLogger(config.audit, sid, instance)
         try:
             plaintext = asyncio.run(decrypt_payload(
                 log_path, config.audit, instance, sid, args.seq, audit_log))
-        except GpgError as e:
+        except EncryptionError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             return
         print(plaintext)
+
+
+def _handle_key(args, config) -> None:
+    """Manage the portable encrypted root-key envelope."""
+    from .crypto import NativeCrypto
+    from .errors import EncryptionError
+    key_path = config.audit.encryption_key_file
+    try:
+        if args.key_cmd == "init":
+            phrase = NativeCrypto.initialize(key_path)
+            print("Store this recovery phrase offline; it will not be shown again:")
+            print(phrase)
+        elif args.key_cmd == "backup":
+            NativeCrypto.backup(key_path, args.path)
+            print(f"Encrypted key backup written to {args.path}")
+        elif args.key_cmd == "restore":
+            import getpass
+            phrase = getpass.getpass("Halgate recovery phrase: ")
+            NativeCrypto.restore(args.path, key_path, phrase, args.replace)
+            print("Encrypted key restored.")
+        else:
+            print("Specify key init, key backup, or key restore.", file=sys.stderr)
+    except EncryptionError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
 
 
 def _handle_memory(args, config, instance) -> None:

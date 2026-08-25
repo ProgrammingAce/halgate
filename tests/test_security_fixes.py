@@ -343,21 +343,6 @@ class TestHttpNoRedirect:
         assert "follow_redirects=True" not in src
 
 
-class TestGpgDecryptArgs:
-    """Bug 12: --passphrase-fd 0 conflicts with encrypted data on stdin."""
-
-    def test_base_args_no_passphrase_fd(self):
-        from halgate.gpg import Gpg
-        gpg = Gpg("0123456789ABCDEF0123456789ABCDEF01234567")
-        assert "--passphrase-fd" not in gpg._base_args()
-
-    def test_decrypt_args_no_passphrase_fd(self):
-        from halgate.gpg import Gpg
-        gpg = Gpg("0123456789ABCDEF0123456789ABCDEF01234567")
-        decrypt_args = gpg._base_args() + ["--yes", "--decrypt"]
-        assert "--passphrase-fd" not in decrypt_args
-
-
 class TestRestoredSessionShape:
     """Bug 7: CLI accessed r.engagement_ids but RestoredSession has
     r.engagements (list[Engagement])."""

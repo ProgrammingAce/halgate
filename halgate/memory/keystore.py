@@ -1,9 +1,8 @@
-"""Encrypted credential keystore (OpenPGP, fail-closed).
+"""Encrypted credential keystore (native AEAD, fail-closed).
 
-Stores detected credentials as GPG-encrypted records. Separate from memory
-and never loaded into LLM context. The harness holds only the recipient's
-public key; decryption happens via the local operator's GPG agent on
-explicit reveal. Plaintext values are passed only through stdin and are never
+Stores detected credentials as encrypted records. Separate from memory and
+never loaded into LLM context. Decryption requires the local operator's
+recovery phrase on explicit reveal. Plaintext values are never
 written to any file, log, or audit record.
 """
 from __future__ import annotations
@@ -15,8 +14,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..config import AuditConfig
-from ..errors import GpgError
-from ..openpgp import OpenPgpBackend, backend_from_config
+from ..crypto import NativeCrypto
+from ..errors import EncryptionError
 
 
 class KeyStore:
@@ -31,19 +30,18 @@ class KeyStore:
                 os.chmod(self._path, 0o600)
             except OSError:
                 pass
-        # Do not start a crypto backend until a credential is actually stored
-        # or revealed.  This keeps normal sessions usable when forensic
-        # capture is disabled and no GnuPG executable is installed.
+        # Do not request the recovery phrase until a credential is stored or
+        # revealed, keeping normal sessions usable without secret access.
         self._cfg = cfg
-        self._gpg: OpenPgpBackend | None = None
-        self.recipient = cfg.gpg_recipient
+        self._crypto: NativeCrypto | None = None
+        self._instance_id = instance_id
         self._ready = False
         self._lock = asyncio.Lock()
 
     async def verify(self) -> dict:
-        """Confirm the configured full fingerprint resolves to an
-        encryption-capable public key. Returns no secret material."""
-        result = await self._crypto_backend().verify_recipient()
+        """Confirm the native key can be unlocked. Returns no secret material."""
+        self._crypto_backend()._root_key()
+        result = {"encryption_version": 1, "can_encrypt": True}
         self._ready = True
         return result
 
@@ -56,19 +54,20 @@ class KeyStore:
                    engagement_id: str | None = None) -> str:
         """Synchronous entry point used by Redactor inside redaction passes.
 
-        Runs gpg via a one-shot asyncio-free subprocess (small payload,
-        bounded time). Fail-closed: any failure raises GpgError so the caller
+        Uses in-process AEAD for this small payload. Fail-closed: any failure raises EncryptionError so the caller
         aborts instead of persisting/forwarding the raw secret.
         """
         existing = self._find(value)
         if existing:
             return existing
-        ciphertext = self._crypto_backend().encrypt_sync(value.encode())
         short_id = "cred_" + uuid4().hex
+        ciphertext = self._crypto_backend().encrypt_sync(
+            value.encode(), f"credential:{self._instance_id}:{short_id}")
         entry = {
             "id": short_id,
             "type": cred_type,
             "ciphertext": ciphertext.decode(),
+            "encryption_version": 1,
             "ts": _now_iso(),
             "found_in": found_in,
             "engagement": engagement_id,
@@ -86,17 +85,20 @@ class KeyStore:
                 self.store_sync, cred_type, value, found_in, engagement_id)
 
     async def reveal(self, short_id: str) -> str | None:
-        """Decrypt via local GPG agent. Caller audits access; plaintext never
+        """Decrypt with the local recovery key. Caller audits access; plaintext never
         enters audit/LLM/memory."""
         entry = self._find_by_id(short_id)
         if entry is None:
             return None
+        if entry.get("encryption_version") != 1:
+            raise EncryptionError("legacy OpenPGP credentials are unsupported")
         raw = entry["ciphertext"].encode()
-        plaintext = await self._crypto_backend().decrypt(raw)
+        plaintext = self._crypto_backend().decrypt_sync(
+            raw, f"credential:{self._instance_id}:{short_id}")
         try:
             return plaintext.decode("utf-8")
         except UnicodeDecodeError as e:
-            raise GpgError("decrypted credential is not valid UTF-8") from e
+            raise EncryptionError("decrypted credential is not valid UTF-8") from e
 
     def known_ids(self) -> list[dict]:
         """List stored credential ids with non-secret metadata only."""
@@ -138,9 +140,10 @@ class KeyStore:
             for line in lines:
                 obj = json.loads(line)
                 try:
-                    decrypted = (await self._crypto_backend().decrypt(
-                        obj["ciphertext"].encode())).decode(errors="replace")
-                except GpgError:
+                    decrypted = self._crypto_backend().decrypt_sync(
+                        obj["ciphertext"].encode(),
+                        f"credential:{self._instance_id}:{obj.get('id')}").decode(errors="replace")
+                except EncryptionError:
                     continue
                 if decrypted == value:
                     return obj.get("id")
@@ -153,11 +156,11 @@ class KeyStore:
         except RuntimeError:
             return asyncio.run(_match())
 
-    def _crypto_backend(self) -> OpenPgpBackend:
+    def _crypto_backend(self) -> NativeCrypto:
         """Create crypto support only at the point encryption is required."""
-        if self._gpg is None:
-            self._gpg = backend_from_config(self._cfg)
-        return self._gpg
+        if self._crypto is None:
+            self._crypto = NativeCrypto(self._cfg.encryption_key_file)
+        return self._crypto
 
     def list(self) -> list[dict]:
         return self.known_ids()

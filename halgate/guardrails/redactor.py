@@ -3,8 +3,7 @@
 The Redactor runs recursively on all user input, tool arguments/results,
 memory writes, UI output, checkpoints, errors, and LLM messages before they
 enter any plaintext store. Discovered secret values are retained only in the
-OpenPGP-encrypted keystore addressed to the configured full recipient
-fingerprint; if encryption fails, the call raises (fail-closed) so no
+native encrypted keystore; if encryption fails, the call raises (fail-closed) so no
 plaintext is persisted or forwarded.
 """
 from __future__ import annotations

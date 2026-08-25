@@ -1,12 +1,12 @@
 """Append-only, hash-chained operational audit log + encrypted forensics.
 
 ALWAYS ON. Redacted data lives in the operational chain; full originals that
-contain secrets are OpenPGP-encrypted to the configured full recipient
-fingerprint in a separate forensic store. Plaintext secrets never enter the
+contain secrets are encrypted with the operator's native recovery key in a
+separate forensic store. Plaintext secrets never enter the
 operational log, LLM context, checkpoints, or UI.
 
 Files:  <audit_dir>/<instance_id>/<session_id>.jsonl           (operations)
-        <audit_dir>/<instance_id>/forensic/<session_id>/<seq>.gpg
+        <audit_dir>/<instance_id>/forensic/<session_id>/<seq>.hge
 Rotation at rotate_bytes: base -> .1 -> .2 (oldest dropped at max).
 
 Hash chain: hash = SHA-256 of the canonical JSON of the entry without its own
@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from ..config import AuditConfig
+from ..crypto import NativeCrypto
 from ..errors import ForensicEncryptionError
-from ..openpgp import OpenPgpBackend, backend_from_config
 from ..guardrails.redactor import scan_object
 
 
@@ -33,7 +33,7 @@ def _now_iso() -> str:
 
 class AuditLogger:
     def __init__(self, audit_cfg: AuditConfig, session_id: str,
-                 instance_id: str, gpg: OpenPgpBackend | None = None):
+                 instance_id: str, crypto: NativeCrypto | None = None):
         self._cfg = audit_cfg
         self._dir = Path(audit_cfg.dir) / instance_id
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -42,10 +42,10 @@ class AuditLogger:
         self._session = session_id
         self._seq = 0
         self._prev_hash = "0" * 64
-        # Encryption is only needed when a raw payload is retained.  Do not
-        # require a host GnuPG binary (or a configured PGPy key) merely to
-        # start normal, redacted audit logging.
-        self._gpg = gpg
+        # Encryption is only needed when a raw payload is retained. Do not
+        # request a recovery phrase merely to start normal, redacted logging.
+        self._crypto = crypto
+        self._instance_id = instance_id
         if self._path.exists():
             # Continue the chain after process restarts.
             last = self.last_entry()
@@ -91,11 +91,12 @@ class AuditLogger:
         payload = {"event": event, "raw": raw, "ts": _now_iso()}
         blob = json.dumps(payload, separators=(",", ":")).encode()
         try:
-            ciphertext = self._crypto_backend().encrypt_sync(blob)
+            ciphertext = self._crypto_backend().encrypt_sync(
+                blob, f"forensic:{self._instance_id}:{self._session}:{seq}")
         except Exception as e:
             raise ForensicEncryptionError(
-                f"OpenPGP encryption unavailable; refusing to retain raw payload: {e}") from e
-        target = self._forensic_dir / f"{seq:06d}.gpg"
+                f"native encryption unavailable; refusing to retain raw payload: {e}") from e
+        target = self._forensic_dir / f"{seq:06d}.hge"
         try:
             self._forensic_dir.mkdir(parents=True, exist_ok=True)
             target.write_bytes(ciphertext)
@@ -114,14 +115,14 @@ class AuditLogger:
         return {
             "path": str(target.relative_to(self._dir)),
             "sha256": hashlib.sha256(ciphertext).hexdigest(),
-            "recipient": self._crypto_backend().recipient,
+            "encryption_version": 1,
         }
 
-    def _crypto_backend(self) -> OpenPgpBackend:
+    def _crypto_backend(self) -> NativeCrypto:
         """Create crypto support only for an operation that requires it."""
-        if self._gpg is None:
-            self._gpg = backend_from_config(self._cfg)
-        return self._gpg
+        if self._crypto is None:
+            self._crypto = NativeCrypto(self._cfg.encryption_key_file)
+        return self._crypto
 
     def _log(self, event: str, payload: dict, raw: Any = None) -> dict:
         seq = self._seq + 1

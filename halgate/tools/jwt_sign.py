@@ -148,7 +148,7 @@ async def handle_jwt_sign(ctx: ToolContext, credential_ref: Any = None,
     if algorithm != "none":
         keystore = ctx.extra.get("keystore")
         if keystore is None:
-            return {"error": "keystore unavailable: OpenPGP keystore not configured"}
+            return {"error": "keystore unavailable: native encryption key not configured"}
         try:
             known = {str(e.get("id")) for e in keystore.known_ids()}
         except Exception as e:
