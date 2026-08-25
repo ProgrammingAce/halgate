@@ -115,7 +115,6 @@ async def handle_pane_spawn(ctx: ToolContext, name: str, command: str,
     name = " ".join(str(name or "").split())[:80] or "Process pane"
     try:
         pane = await ctx.process_mgr.spawn(name, cmd, workdir=workdir,
-                                           execution_mode=engagement.execution_mode,
                                            engagement_id=engagement_id)
         return {"id": pane.id, "name": pane.name, "status": "running"}
     except ValueError as e:

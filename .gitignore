@@ -18,9 +18,6 @@ dist/
 .idea/
 .vscode/
 
-# Container runtime state (docker-compose default host folder)
-halgate-data/
-
 # Private planning and agent instructions (public Markdown is allowed)
 DESIGN.md
 IMPLEMENT_PROMPT.txt

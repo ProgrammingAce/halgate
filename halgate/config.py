@@ -174,8 +174,6 @@ class ProcessConfig(BaseModel):
     # Absorb bursts from long-running panes until the UI polling loop drains
     # them; visible scrollback is independently bounded by the TUI.
     pane_buffer_bytes: int = 8388608
-    container_runtime: str = "podman"
-    container_image: str = "localhost/halgate:latest"
 
 
 class CallbackConfig(BaseModel):

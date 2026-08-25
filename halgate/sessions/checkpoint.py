@@ -55,7 +55,7 @@ class SessionCheckpoint:
             "engagements": [
                 {
                     "id": e.id, "label": e.label, "target": e.target,
-                    "package": e.package, "execution_mode": e.execution_mode,
+                    "package": e.package,
                     "budget_overrides": e.budget_overrides,
                     "jwt_claim_extensions": list(e.jwt_claim_extensions),
                     "status": e.status, "created": e.created,
@@ -66,7 +66,7 @@ class SessionCheckpoint:
             "hashes": {
                 "engagements": hashlib.sha256(
                     json.dumps(sorted(
-                        (e.package, e.target, e.execution_mode)
+                        (e.package, e.target)
                         for e in engagements)).encode()).hexdigest(),
             },
             **(extra_meta or {}),
@@ -112,7 +112,7 @@ class SessionCheckpoint:
         engagements = [
             Engagement(
                 id=s["id"], label=s["label"], target=s["target"],
-                package=s["package"], execution_mode=s.get("execution_mode", "host"),
+                package=s["package"],
                 budget_overrides=s.get("budget_overrides", {}),
                 status=s.get("status", "active"), created=s.get("created", ""),
                 jwt_claim_extensions=tuple(s.get("jwt_claim_extensions", [])),

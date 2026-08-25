@@ -7,12 +7,6 @@ from halgate.errors import ScopeError
 from halgate.scope import Engagement
 
 
-def test_invalid_execution_mode_rejected():
-    with pytest.raises(ScopeError):
-        Engagement(id="e", label="l", target="/x", package="defensive",
-                   execution_mode="weird")
-
-
 def test_invalid_status_rejected():
     with pytest.raises(ScopeError):
         Engagement(id="e", label="l", target="/x", package="defensive",

@@ -16,12 +16,9 @@ from urllib.parse import urlsplit
 
 from rich.markdown import Markdown
 from rich.markup import escape
-from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
-from textual.drivers.linux_driver import LinuxDriver
 from textual.message import Message
-from textual.messages import InBandWindowResize
 from textual.widgets import (
     Button, Checkbox, Input, RichLog, Select, Static,
     TabbedContent, TabPane, TextArea,
@@ -52,8 +49,7 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
     ("/resume-actions", "unlock actions after /panic"),
     ("/budget [id]", "show budget usage (all or one budget)"),
     ("/engagement list", "list engagements"),
-    ("/engagement add label:target[:package[:host|container]]", "add an engagement"),
-    ("/engagement mode <id> host|container", "set execution mode"),
+    ("/engagement add label:target[:package]", "add an engagement"),
     ("/engagement pause|resume <id>", "pause or resume an engagement"),
     ("/engagement claims <id> add|remove [key...]", "manage JWT claim extensions"),
     ("/secret list | /secret reveal <id> | /secret store", "browse stored secrets"),
@@ -81,27 +77,6 @@ HELP_MARKDOWN = """\
 """ + "\n".join(f"* `{c}` — {d}" for c, d in SLASH_COMMANDS)
 PANE_SCROLLBACK_LINES = 20_000
 MAX_UI_LABEL_LENGTH = 80
-
-
-class _ContainerLinuxDriver(LinuxDriver):
-    """Use cell-based mouse reports through a container PTY.
-
-    Podman's TTY relay may advertise in-band resize support while forwarding
-    ordinary cell-based SGR mouse coordinates. Textual then enables pixel-mode
-    mouse reporting and scales those coordinates a second time; clicks miss
-    every widget and Screen clears focus. Ignore that optional negotiation in
-    containers, retaining standard SGR mouse support and correct click targets.
-    """
-
-    def process_message(self, message: Message) -> None:
-        if isinstance(message, InBandWindowResize):
-            return
-        super().process_message(message)
-
-
-def _is_container() -> bool:
-    """Whether this process is running in a common OCI container runtime."""
-    return Path("/.dockerenv").exists() or Path("/run/.containerenv").exists()
 
 
 # Some terminal multiplexers and remote terminals can deliver mouse reports to
@@ -1767,7 +1742,7 @@ class HalgateApp(App):
     ]
 
     def __init__(self, halgate: Halgate):
-        super().__init__(driver_class=_ContainerLinuxDriver if _is_container() else None)
+        super().__init__()
         self.h = halgate
         self._chat: ChatPanel | None = None
         self._pane_panel: PanePanel | None = None
@@ -1857,18 +1832,6 @@ class HalgateApp(App):
         self._refresh_approval_badge()
         if not self.h.engagements:
             self._show_onboarding()
-
-    async def on_event(self, event: Message) -> None:
-        """Ignore bogus terminal blur reports forwarded by container PTYs.
-
-        Textual maps ``ESC [ O`` to ``AppBlur`` and clears the focused widget.
-        Podman can emit that sequence after a mouse report without a matching
-        focus-in sequence, leaving this terminal-only TUI unable to receive
-        keyboard input. Retaining the current widget is correct here.
-        """
-        if isinstance(event, events.AppBlur):
-            return
-        await super().on_event(event)
 
     def on_button_pressed(self, e: Button.Pressed) -> None:
         if e.button.id == "header-help":
@@ -2598,49 +2561,27 @@ class HalgateApp(App):
             if sub[0] == "list" or not arg:
                 for e in self.h.engagements:
                     self._chat.add_agent(
-                        f"  {e.label} ({e.target}, {e.package}, "
-                        f"{e.execution_mode}, {e.status})")
+                        f"  {e.label} ({e.target}, {e.package}, {e.status})")
             elif sub[0] == "add" and len(sub) > 1:
-                parts = sub[1].split(":", 3)
-                if len(parts) not in (2, 3, 4):
+                parts = sub[1].split(":", 2)
+                if len(parts) not in (2, 3):
                     self._chat.add_agent(
-                        "Usage: /engagement add label:target[:package[:host|container]]")
+                        "Usage: /engagement add label:target[:package]")
                 else:
                     label, target = _safe_ui_label(parts[0], fallback="Target"), parts[1]
                     package = (parts[2] if len(parts) >= 3
                                else self.h.config.scope.package)
-                    execution_mode = parts[3] if len(parts) == 4 else "host"
                     try:
                         from .scope import Engagement, new_engagement_id
                         eid = new_engagement_id()
                         self.h.add_engagement(Engagement(
-                            id=eid, label=label, target=target, package=package,
-                            execution_mode=execution_mode))
+                            id=eid, label=label, target=target, package=package))
                         self._clear_target_auto_approvals(
                             "engagement target changed")
                         self._refresh_prompt_history()
                         self._chat.add_agent(f"Engagement added: {eid}")
                     except ValueError as e:
                         self._chat.add_agent(f"[red]{e}[/red]")
-            elif sub[0] == "mode":
-                mode_args = sub[1].split() if len(sub) > 1 else []
-                if len(mode_args) != 2:
-                    self._chat.add_agent(
-                        "Usage: /engagement mode <id> <host|container>")
-                    return
-                engagement = next(
-                    (e for e in self.h.engagements if e.id == mode_args[0]), None)
-                mode = mode_args[1].lower()
-                if engagement is None:
-                    self._chat.add_agent(
-                        f"[red]Unknown engagement '{mode_args[0]}'.[/red]")
-                elif mode not in ("host", "container"):
-                    self._chat.add_agent(
-                        "Usage: /engagement mode <id> <host|container>")
-                else:
-                    engagement.execution_mode = mode
-                    self._chat.add_agent(
-                        f"{engagement.label} execution mode set to {mode}.")
             elif sub[0] in ("pause", "resume") and len(sub) > 1:
                 target = next((e for e in self.h.engagements if e.id == sub[1]), None)
                 if target is None:

@@ -139,9 +139,6 @@ class Engagement:
     label: str
     target: str
     package: str
-    # Host execution is the normal case.  Container mode is opt-in for an
-    # engagement that actually lives in, or is assessed from, a container.
-    execution_mode: str = "host"       # "host" (default) | "container"
     budget_overrides: dict[str, int] = field(default_factory=dict)
     jwt_claim_extensions: tuple[str, ...] = ()
     status: str = "active"             # "active" | "paused"
@@ -152,8 +149,6 @@ class Engagement:
     def __post_init__(self) -> None:
         if not _ENGAGEMENT_ID_RE.fullmatch(self.id):
             raise ScopeError("engagement id must be 1-80 safe identifier characters")
-        if self.execution_mode not in ("container", "host"):
-            raise ScopeError(f"invalid execution_mode: {self.execution_mode}")
         if self.status not in ("active", "paused"):
             raise ScopeError(f"invalid status: {self.status}")
 

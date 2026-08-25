@@ -61,7 +61,7 @@ async def test_scan_preserves_nmap_stderr_diagnostics(packages, monkeypatch) -> 
             assert "-Pn" in command
             return True, ""
 
-        async def execute_in_mode(self, *_args, **_kwargs):
+        async def execute(self, *_args, **_kwargs):
             return ShellResult(
                 rc=0,
                 stdout=b"Nmap scan report for 192.0.2.10\n80/tcp open http\n",
@@ -76,8 +76,6 @@ async def test_scan_preserves_nmap_stderr_diagnostics(packages, monkeypatch) -> 
         config=SimpleNamespace(
             packages=packages,
             shell=SimpleNamespace(workdir="."),
-            process=SimpleNamespace(container_runtime="podman",
-                                    container_image="image"),
         ),
         extra={},
     )
@@ -101,7 +99,7 @@ async def test_scan_returns_nonzero_nmap_exit_as_failure(packages, monkeypatch) 
         def check(self, _command):
             return True, ""
 
-        async def execute_in_mode(self, *_args, **_kwargs):
+        async def execute(self, *_args, **_kwargs):
             return ShellResult(rc=1, stdout=b"partial output", stderr=b"socket failure",
                                truncated=False)
 
@@ -112,8 +110,6 @@ async def test_scan_returns_nonzero_nmap_exit_as_failure(packages, monkeypatch) 
         config=SimpleNamespace(
             packages=packages,
             shell=SimpleNamespace(workdir="."),
-            process=SimpleNamespace(container_runtime="podman",
-                                    container_image="image"),
         ),
         extra={},
     )

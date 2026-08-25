@@ -144,19 +144,7 @@ class ShellGuard:
             return []
 
     async def execute(self, cmd: str, timeout: int | None = None) -> ShellResult:
-        return await self.execute_in_mode(cmd, timeout=timeout)
-
-    async def execute_in_mode(self, cmd: str, timeout: int | None = None,
-                              execution_mode: str = "host",
-                              container_runtime: str = "podman",
-                              container_image: str = "localhost/halgate:latest",
-                              mount_dir: str | None = None) -> ShellResult:
-        """Execute a checked command on the host or in an ephemeral container.
-
-        Container mode deliberately uses an explicit runtime invocation; it
-        cannot silently fall back to host execution when Podman is missing.
-        The working directory is the only host path mounted into the container.
-        """
+        """Execute a checked command directly on the host."""
         # Callers normally validate before prompting, but execution is the
         # final authority. This prevents future callers from bypassing the
         # non-overridable policy by calling this method directly.
@@ -176,20 +164,6 @@ class ShellGuard:
             return ShellResult(rc=126, stdout=b"", stderr=b"empty command",
                                truncated=False)
         cwd = self._workdir
-        if execution_mode == "container":
-            try:
-                cwd = Path(mount_dir or self._workdir).resolve(strict=True)
-            except (OSError, RuntimeError) as e:
-                return ShellResult(rc=126, stdout=b"", stderr=str(e).encode(),
-                                   truncated=False)
-            # Networking remains available for authorized assessment targets;
-            # structured/shell scope checks are enforced before this point.
-            args = [container_runtime, "run", "--rm", "--interactive",
-                    "--workdir", "/work", "--volume", f"{cwd}:/work:Z",
-                    container_image, *args]
-        elif execution_mode != "host":
-            return ShellResult(rc=126, stdout=b"",
-                               stderr=b"invalid execution mode", truncated=False)
         try:
             proc = await asyncio.create_subprocess_exec(
                 *args,

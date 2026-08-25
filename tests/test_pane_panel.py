@@ -7,10 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from textual import events
 from textual.app import App, ComposeResult
 from textual.css.scalar import Unit
-from textual.messages import InBandWindowResize
 from textual.widgets import Button, Checkbox, Input, RichLog, Select
 
 from halgate.scope import Engagement
@@ -23,7 +21,6 @@ from halgate.tui import (
     OnboardingModal,
     PaneModal,
     PanePanel,
-    _ContainerLinuxDriver,
     _is_preformatted,
     _note_renderable,
     _safe_ui_label,
@@ -470,27 +467,6 @@ async def test_chat_width_and_identity_follow_config() -> None:
         assert "8d3d4bd12df1" not in header
         assert "scope:defensive" in header
         assert "llm:remote-coder" in header
-
-
-@pytest.mark.asyncio
-async def test_terminal_blur_report_does_not_clear_chat_focus() -> None:
-    """A PTY's stray AppBlur must not disable keyboard input."""
-    app = HalgateApp(_halgate_stub(62))
-    async with app.run_test() as pilot:
-        await pilot.pause()
-        chat_input = app.query_one("#chat-input", ChatInput)
-        assert app.focused is chat_input
-        app.post_message(events.AppBlur())
-        await pilot.pause()
-        assert app.focused is chat_input
-        assert app.app_focus is True
-
-
-def test_container_driver_ignores_pixel_mouse_negotiation() -> None:
-    """Container PTYs must retain Textual's cell-coordinate mouse mode."""
-    driver = object.__new__(_ContainerLinuxDriver)
-    # This needs no initialized driver state because the message is consumed.
-    driver.process_message(InBandWindowResize(supported=True, enabled=True))
 
 
 @pytest.mark.asyncio

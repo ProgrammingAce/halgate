@@ -45,7 +45,7 @@ def _make_parser() -> argparse.ArgumentParser:
     p.add_argument("--latest", action="store_true",
                    help="Resume the most recent session")
     p.add_argument("--add", action="append", default=[],
-                   help='Add engagement: "label:target:pkg[:host|container]" (repeatable)')
+                   help='Add engagement: "label:target[:package]" (repeatable)')
     p.add_argument("--dry-run", action="store_true",
                    help="Validation-only mode: no execution")
 
@@ -186,27 +186,21 @@ def _parse_engagements(args, config) -> list:
     engagements = []
     pkg = args.pkg or config.scope.package or "defensive"
     for i, spec in enumerate(args.add):
-        parts = spec.split(":", 3)
-        if len(parts) == 4:
-            label, target, pkg_, execution_mode = parts
-        elif len(parts) == 3:
+        parts = spec.split(":", 2)
+        if len(parts) == 3:
             label, target, pkg_ = parts
-            execution_mode = "host"
         elif len(parts) == 2:
             label, target = parts
             pkg_ = pkg
-            execution_mode = "host"
         else:
             print(f"ERROR: invalid --add format: {spec!r} "
-                  f"(expected 'label:target:pkg[:host|container]')", file=sys.stderr)
+                  f"(expected 'label:target[:package]')", file=sys.stderr)
             continue
         eid = new_engagement_id()
         if pkg_ not in config.packages:
             print(f"ERROR: unknown scope package '{pkg_}'", file=sys.stderr)
             continue
-        engagements.append(Engagement(
-            id=eid, label=label, target=target, package=pkg_,
-            execution_mode=execution_mode))
+        engagements.append(Engagement(id=eid, label=label, target=target, package=pkg_))
     return engagements
 
 
@@ -277,7 +271,7 @@ def _onboarding_wizard(h) -> None:
         sel = input(
             f"Select [1-{min(len(sessions), 5)}/c]: ").strip().lower() or "1"
         if sel in ("c", "cancel", "q", ""):
-            print("  Cancelled. Use /engagement add label:target[:pkg[:host|container]] later.")
+            print("  Cancelled. Use /engagement add label:target[:package] later.")
             return
         try:
             idx = int(sel) - 1
@@ -321,7 +315,7 @@ def _onboarding_wizard(h) -> None:
                         print(f"  Not found: {sid}")
 
     else:
-        print("  Skipped. Use /engagement add label:target[:pkg[:host|container]] later.")
+        print("  Skipped. Use /engagement add label:target[:package] later.")
 
 
 def _run_cli_mode(h) -> int:
@@ -394,8 +388,7 @@ def _handle_command(h, cmd: str) -> bool:
     elif name == "help":
         print("/panes /send /recall /compact /engagement /reveal "
               "/kill /checkpoint /status /dry-run /budget /panic "
-              "/resume-actions /engagement add label:target[:pkg[:host|container]] "
-              "/engagement mode <id> <host|container> "
+              "/resume-actions /engagement add label:target[:package] "
               "/sessions /sessions pick /sessions delete <id> "
               "/resume <id> "
               "/quit")
@@ -517,46 +510,26 @@ def _handle_command(h, cmd: str) -> bool:
         sub = arg.split(None, 1) if arg else ["list", ""]
         if sub[0] == "list" or not arg:
             for e in h.engagements:
-                print(f"  {e.id}: {e.label} ({e.target}, {e.package}, "
-                      f"{e.execution_mode}, {e.status})")
+                print(f"  {e.id}: {e.label} ({e.target}, {e.package}, {e.status})")
         elif sub[0] == "add" and len(sub) > 1:
-            parts = sub[1].split(":", 3)
-            if len(parts) == 4:
-                label, target, pkg_name, execution_mode = parts
-            elif len(parts) == 3:
+            parts = sub[1].split(":", 2)
+            if len(parts) == 3:
                 label, target = parts[0], parts[1]
                 pkg_name = parts[2]
-                execution_mode = "host"
             elif len(parts) == 2:
                 label, target = parts[0], parts[1]
                 pkg_name = h.config.scope.package or "defensive"
-                execution_mode = "host"
             else:
-                print("Usage: /engagement add label:target[:package[:host|container]]")
+                print("Usage: /engagement add label:target[:package]")
                 return False
             if pkg_name not in h.config.packages:
                 print(f"ERROR: unknown scope package '{pkg_name}'")
                 return False
             from .scope import Engagement, new_engagement_id
             eid = new_engagement_id()
-            eng = Engagement(id=eid, label=label, target=target,
-                             package=pkg_name, execution_mode=execution_mode)
+            eng = Engagement(id=eid, label=label, target=target, package=pkg_name)
             h.add_engagement(eng)
-            print(f"Added {eid}: {label} ({target}, {pkg_name}, {execution_mode})")
-        elif sub[0] == "mode":
-            mode_args = sub[1].split() if len(sub) > 1 else []
-            if len(mode_args) != 2:
-                print("Usage: /engagement mode <id> <host|container>")
-                return False
-            engagement = next((e for e in h.engagements if e.id == mode_args[0]), None)
-            mode = mode_args[1].lower()
-            if engagement is None:
-                print(f"ERROR: unknown engagement '{mode_args[0]}'")
-            elif mode not in ("host", "container"):
-                print("Usage: /engagement mode <id> <host|container>")
-            else:
-                engagement.execution_mode = mode
-                print(f"{engagement.id} execution mode set to {mode}.")
+            print(f"Added {eid}: {label} ({target}, {pkg_name})")
         elif sub[0] == "pause" and sub[1]:
             for e in h.engagements:
                 if e.id == sub[1]:

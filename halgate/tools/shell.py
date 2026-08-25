@@ -61,12 +61,7 @@ async def handle_shell(ctx: ToolContext, command: str, engagement_id: str,
     allowed, reason = guard.check(command)
     if not allowed:
         return {"error": reason}
-    result = await guard.execute_in_mode(
-        command, timeout=timeout, execution_mode=engagement.execution_mode,
-        container_runtime=ctx.config.process.container_runtime,
-        container_image=ctx.config.process.container_image,
-        mount_dir=workdir,
-    )
+    result = await guard.execute(command, timeout=timeout)
     out = {
         "rc": result.rc,
         "argv": guard.parse(command),

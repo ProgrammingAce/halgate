@@ -80,13 +80,7 @@ async def handle_scan(ctx: ToolContext, targets: list[str],
     allowed, reason = guard.check(cmd_str)
     if not allowed:
         return {"error": reason}
-    result = await guard.execute_in_mode(
-        cmd_str, timeout=pkg.scan_timeout,
-        execution_mode=engagement.execution_mode,
-        container_runtime=ctx.config.process.container_runtime,
-        container_image=ctx.config.process.container_image,
-        mount_dir=workdir,
-    )
+    result = await guard.execute(cmd_str, timeout=pkg.scan_timeout)
     output = result.stdout.decode(errors="replace")
     stderr = result.stderr.decode(errors="replace")
     if result.timed_out:

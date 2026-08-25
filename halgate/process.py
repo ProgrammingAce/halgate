@@ -23,7 +23,6 @@ class Pane:
     truncated: bool = False
     engagement_id: str = ""
     workdir: str = ""
-    execution_mode: str = "host"
 
     @property
     def status(self) -> str:
@@ -42,7 +41,6 @@ class ProcessManager:
 
     async def spawn(self, name: str, cmd: list[str],
                     workdir: str | None = None,
-                    execution_mode: str = "host",
                     engagement_id: str = "") -> Pane:
         if self.active_count() >= self._max:
             raise ValueError(f"max panes ({self._max}) reached")
@@ -53,17 +51,6 @@ class ProcessManager:
         pane_id = f"pane-{self._seq:02d}"
         original_cmd = list(cmd)
         cwd = workdir or self._config.shell.workdir
-        if execution_mode == "container":
-            try:
-                mount = os.path.realpath(cwd)
-            except OSError as e:
-                raise ValueError(f"invalid pane workdir: {e}") from e
-            cmd = [self._config.process.container_runtime, "run", "--rm",
-                   "--interactive", "--workdir", "/work", "--volume",
-                   f"{mount}:/work:Z", self._config.process.container_image,
-                   *cmd]
-        elif execution_mode != "host":
-            raise ValueError(f"invalid execution mode: {execution_mode}")
         kwargs: dict[str, Any] = dict(
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
@@ -74,7 +61,7 @@ class ProcessManager:
         proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)
         pane = Pane(id=pane_id, name=name, cmd=original_cmd, proc=proc,
                     started=datetime.now().isoformat(), engagement_id=engagement_id,
-                    workdir=cwd, execution_mode=execution_mode)
+                    workdir=cwd)
         self._panes[pane_id] = pane
         asyncio.create_task(self._reader(pane, proc.stdout))
         return pane
@@ -151,8 +138,7 @@ class ProcessManager:
             {"id": p.id, "name": p.name, "cmd": " ".join(p.cmd), "argv": p.cmd,
              "status": p.status, "started": p.started,
              "exit_code": p.exit_code, "truncated": p.truncated,
-             "engagement_id": p.engagement_id, "workdir": p.workdir,
-             "execution_mode": p.execution_mode}
+             "engagement_id": p.engagement_id, "workdir": p.workdir}
             for p in self._panes.values()
         ]
 

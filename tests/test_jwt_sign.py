@@ -609,7 +609,7 @@ def test_checkpoint_tolerates_missing_jwt_claim_extensions(tmp_path) -> None:
         "session_id": "s1", "name": "s1",
         "engagements": [{
             "id": "eng-a", "label": "a", "target": "127.0.0.1",
-            "package": "offensive", "execution_mode": "host",
+            "package": "offensive",
             "budget_overrides": {}, "status": "active", "created": "x",
         }],
     }))

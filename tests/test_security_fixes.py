@@ -2,8 +2,6 @@
 confidence cap, process session isolation."""
 import inspect
 import os
-import shutil
-import subprocess
 import pytest
 
 from halgate.config import (
@@ -317,38 +315,6 @@ class TestConfidenceCap:
 
 
 class TestProcessSessionIsolation:
-    """Bug 3: start_new_session was only set in host mode, leaking
-    grandchild processes in container mode on kill."""
-
-    @pytest.mark.asyncio
-    async def test_container_mode_session_leader(self, tmp_path):
-        import asyncio
-        cfg = Config(
-            llm=LLMConfig(active="t", endpoints=[
-                EndpointConfig(id="t", base_url="x", model="m")]),
-            safety=SafetyConfig(),
-            process=ProcessConfig(max_panes=4),
-        )
-        runtime = shutil.which(cfg.process.container_runtime)
-        if runtime is None:
-            pytest.skip("podman not available")
-        image_check = subprocess.run(
-            [runtime, "image", "exists", cfg.process.container_image],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        if image_check.returncode != 0:
-            pytest.skip("podman runtime or configured container image is unavailable")
-        pm = ProcessManager(cfg)
-        pane = await pm.spawn("s", ["sleep", "0.3"],
-                              execution_mode="container")
-        await asyncio.sleep(0.15)
-        pid = pane.proc.pid
-        pgid = os.getpgid(pid)
-        assert pgid == pid, (
-            f"container pane pgid={pgid} != pid={pid}; "
-            "process not a session leader; kill cannot reach children")
-        await pm.kill(pane.id)
-        assert pane.exit_code is not None
-
     @pytest.mark.asyncio
     async def test_host_mode_session_leader(self, tmp_path):
         import asyncio
@@ -359,8 +325,7 @@ class TestProcessSessionIsolation:
             process=ProcessConfig(max_panes=4),
         )
         pm = ProcessManager(cfg)
-        pane = await pm.spawn("s", ["sleep", "0.3"],
-                              execution_mode="host")
+        pane = await pm.spawn("s", ["sleep", "0.3"])
         await asyncio.sleep(0.15)
         pid = pane.proc.pid
         pgid = os.getpgid(pid)

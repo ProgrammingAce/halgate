@@ -211,7 +211,6 @@ def _build_dry_run_plan(tc: ToolCall, engagement: Engagement) -> str:
     if tc.name == "shell":
         return (f"CMD: {tc.arguments.get('command')} | "
                 f"engagement: {engagement.label} | "
-                f"mode: {engagement.execution_mode} | "
                 f"target: {engagement.target}")
     if tc.name == "http":
         return (f"METHOD: {tc.arguments.get('method', 'GET')} {tc.arguments.get('url')} | "

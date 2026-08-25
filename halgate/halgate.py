@@ -324,7 +324,7 @@ class Halgate:
             for e in active_engs:
                 parts.append(
                     f"  - {e.id} ({e.label}): target={e.target}, "
-                    f"package={e.package}, mode={e.execution_mode}, "
+                    f"package={e.package}, "
                     f"scratch={e.scratch_dir}")
             if len(active_engs) == 1:
                 parts.append(

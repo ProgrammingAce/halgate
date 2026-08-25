@@ -16,7 +16,7 @@ def sample_engagements(tmp_path):
         Engagement(id="eng-01", label="Codebase: payments-svc", target=str(root),
                    package="defensive"),
         Engagement(id="eng-02", label="Lab net", target="192.168.1.0/24",
-                   package="offensive", execution_mode="container"),
+                   package="offensive"),
     ]
 
 
@@ -36,7 +36,7 @@ def test_roundtrip(tmp_path):
     assert restored.panes == panes
     assert [e.id for e in restored.engagements] == ["eng-01", "eng-02"]
     assert restored.engagements[0].package == "defensive"
-    assert restored.engagements[1].execution_mode == "container"
+    assert restored.engagements[1].package == "offensive"
     assert restored.llm_id == "llama-local"
 
 
