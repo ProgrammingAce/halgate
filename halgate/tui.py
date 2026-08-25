@@ -268,12 +268,9 @@ class ChatPanel(Vertical):
         height: 1;
         width: 100%;
         content-align: left middle;
-    }
-    ChatPanel #collapse-activity {
-        display: none;
-        height: 1;
-        width: 100%;
-        content-align: left middle;
+        color: $warning;
+        background: $warning 20%;
+        text-style: bold;
     }
     ChatPanel #activity-log {
         display: none;
@@ -325,8 +322,8 @@ class ChatPanel(Vertical):
         self._thinking = Static("", id="thinking-status")
         self._status_bar = Horizontal(
             self._status, self._thinking, id="status-bar")
-        self._activity_toggle = Button("^^^", id="activity-toggle")
-        self._activity_collapse = Button("vvv", id="collapse-activity")
+        self._activity_toggle = Button(
+            "^^^ Expand ^^^", id="activity-toggle", compact=True)
         self._activity = RichLog(highlight=True, markup=True, wrap=True,
                                  max_lines=500, id="activity-log")
         self._stream = Static("", id="stream-output")
@@ -344,7 +341,6 @@ class ChatPanel(Vertical):
     def compose(self) -> ComposeResult:
         yield self._log
         yield self._activity_toggle
-        yield self._activity_collapse
         yield self._activity
         yield self._stream
         yield self._input
@@ -384,7 +380,9 @@ class ChatPanel(Vertical):
     def add_activity(self, kind: str, text: str) -> None:
         """Show operator-visible agent progress, not private reasoning."""
         if kind == "agent":
-            self._transcript.append(f"Agent: {text}")
+            # Progress messages are useful after the activity trace is hidden,
+            # so keep the same Agent-labelled entry in the main conversation.
+            self.add_agent(text, markup=False)
             self._activity.write(f"[cyan]Agent:[/cyan] {escape(text)}")
         elif kind == "tool_call":
             name, sep, args = text.partition(": ")
@@ -460,14 +458,19 @@ class ChatPanel(Vertical):
         """Expand or collapse the operator-facing thinking/activity trace."""
         self._activity_open = not self._activity_open
         self._activity.styles.display = "block" if self._activity_open else "none"
-        self._activity_toggle.styles.display = "none" if self._activity_open else "block"
-        self._activity_collapse.styles.display = "block" if self._activity_open else "none"
+        self._activity_toggle.label = (
+            "vvv Hide vvv" if self._activity_open else "^^^ Expand ^^^")
+        self._activity_toggle.refresh(layout=True)
 
     def stream_event(self, kind: str, text: str) -> None:
         """Render response tokens as they arrive, without persisting a draft."""
         if kind == "start":
             self._stream_text = ""
             self._stream_has_response = False
+            # A prior stream may have left this widget visible. Hide and clear
+            # it until the new response has content to render.
+            self._stream.update("")
+            self._stream.styles.display = "none"
         elif kind == "delta":
             self._stream_has_response = True
             self._stream_text += text
@@ -1904,12 +1907,9 @@ class HalgateApp(App):
         height: 1;
         width: 100%;
         content-align: left middle;
-    }
-    #collapse-activity {
-        display: none;
-        height: 1;
-        width: 100%;
-        content-align: left middle;
+        color: $warning;
+        background: $warning 20%;
+        text-style: bold;
     }
     #activity-log {
         display: none;
@@ -2089,8 +2089,6 @@ class HalgateApp(App):
         elif e.button.id == "header-config":
             self._open_config()
         elif e.button.id == "activity-toggle" and self._chat:
-            self._chat.toggle_activity()
-        elif e.button.id == "collapse-activity" and self._chat:
             self._chat.toggle_activity()
         elif e.button.id == "split-panes" and self._pane_panel:
             if not self._pane_panel.toggle_split():

@@ -232,6 +232,20 @@ async def test_thinking_and_context_status_share_a_persistent_bottom_bar() -> No
         assert "Thought for 0:00" in str(chat._thinking.render())
 
 
+@pytest.mark.asyncio
+async def test_new_stream_hides_empty_live_output_row() -> None:
+    app = ChatTestApp()
+    async with app.run_test() as pilot:
+        chat = app.query_one(ChatPanel)
+        chat.stream_event("delta", "partial response")
+        await pilot.pause()
+        assert chat._stream.styles.display != "none"
+
+        chat.stream_event("start", "")
+        await pilot.pause()
+        assert chat._stream.styles.display == "none"
+
+
 def test_ui_labels_are_nonempty_bounded_and_single_line() -> None:
     assert _safe_ui_label("") == "Untitled"
     assert _safe_ui_label("  one\n\ttwo  ") == "one two"
@@ -592,25 +606,35 @@ async def test_activity_log_shows_structured_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_activity_toggle_buttons_raise_and_lower() -> None:
+async def test_agent_activity_is_also_shown_in_main_chat() -> None:
+    app = ChatTestApp()
+    async with app.run_test() as pilot:
+        chat = app.query_one(ChatPanel)
+        chat.toggle_activity()
+        chat.add_activity("agent", "Checking the configured target.")
+        await pilot.pause()
+
+        assert "Agent: Checking the configured target." in _log_text(chat._activity)
+        assert "Agent:" in _log_text(chat._log)
+        assert "Checking the configured target." in _log_text(chat._log)
+        assert chat.transcript() == "Agent: Checking the configured target."
+
+
+@pytest.mark.asyncio
+async def test_activity_toggle_button_relabels_for_current_state() -> None:
     app = ChatTestApp()
     async with app.run_test() as pilot:
         chat = app.query_one(ChatPanel)
         toggle = app.query_one("#activity-toggle", Button)
-        collapse = app.query_one("#collapse-activity", Button)
         await pilot.pause()
 
-        assert toggle.label.plain == "^^^"
-        assert collapse.label.plain == "vvv"
-        # collapsed by default: the raise button shows, lower is hidden
+        assert toggle.label.plain == "^^^ Expand ^^^"
         assert toggle.styles.display != "none"
-        assert collapse.styles.display == "none"
 
         chat.toggle_activity()
         await pilot.pause()
-        # expanded: the lower button now shows
-        assert toggle.styles.display == "none"
-        assert collapse.styles.display != "none"
+        assert toggle.label.plain == "vvv Hide vvv"
+        assert toggle.styles.display != "none"
 
 
 @pytest.mark.asyncio
