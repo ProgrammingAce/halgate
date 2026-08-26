@@ -11,14 +11,16 @@ MAX_LINE_LIMIT = 2_000
 
 READ_FILE_SCHEMA = {
     "name": "read_file",
-    "description": "Read a text file or list a directory. For files, returns "
-                   "content (truncated at 512KB). For directories, returns "
-                   "up to 200 entries.",
+    "description": "Read a text file or list a directory within the active "
+                   "engagement's allowed filesystem scope. Relative paths are "
+                   "resolved inside its private scratch directory. For files, "
+                   "returns content (truncated at 512KB); directories return up "
+                   "to 200 entries.",
     "parameters": {
         "type": "object",
         "properties": {
             "path": {"type": "string",
-                     "description": "Path to the file or directory"},
+                     "description": "File or directory path; relative paths are relative to the engagement scratch directory, and absolute paths must be in engagement scope"},
             "offset": {"type": "integer",
                        "description": "Line offset (1-indexed) for large files"},
             "limit": {"type": "integer",
@@ -44,7 +46,18 @@ async def handle_read_file(ctx: ToolContext, path: str,
             raise ValueError
     except (TypeError, ValueError):
         return {"error": f"offset must be at least 1 and limit must be 1-{MAX_LINE_LIMIT}"}
+    try:
+        engagement = ctx.gate._require_active(engagement_id)
+    except Exception as e:
+        return {"error": str(e)}
     p = Path(path)
+    if not p.is_absolute():
+        if not engagement.scratch_dir:
+            return {"error": "read_file requires an engagement scratch directory for relative paths"}
+        p = Path(engagement.scratch_dir) / p
+    allowed, reason = ctx.gate.check_path(str(p), engagement)
+    if not allowed:
+        return {"error": reason}
     if p.is_dir():
         try:
             entries = sorted(p.iterdir(), key=lambda e: e.name)

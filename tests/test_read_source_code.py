@@ -3,6 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from halgate.scope import Engagement, ScopeGate
+from halgate.tools.glob import handle_glob
+from halgate.tools.read_file import handle_read_file
 from halgate.tools.read_source_code import handle_read_source_code
 
 
@@ -36,6 +38,50 @@ def test_scope_accepts_relative_source_paths_only_in_scratch(packages, tmp_path)
         "read_source_code", {"path": "app.py"}, "eng-source")
 
     assert ok, reason
+
+
+def test_scope_normalizes_relative_read_and_glob_paths_to_scratch(packages, tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    ctx = _ctx(packages, scratch)
+
+    read_args = {"path": "notes.txt"}
+    glob_args = {"pattern": "*.txt", "path": "reports"}
+    read_ok, read_reason, _ = ctx.gate.authorize("read_file", read_args, "eng-source")
+    glob_ok, glob_reason, _ = ctx.gate.authorize("glob", glob_args, "eng-source")
+
+    assert read_ok, read_reason
+    assert glob_ok, glob_reason
+    assert read_args["path"] == str(scratch / "notes.txt")
+    assert glob_args["path"] == str(scratch / "reports")
+
+
+@pytest.mark.asyncio
+async def test_relative_read_and_glob_use_scratch_directory(packages, tmp_path):
+    scratch = tmp_path / "scratch"
+    reports = scratch / "reports"
+    reports.mkdir(parents=True)
+    (scratch / "notes.txt").write_text("scratch-only\n")
+    (reports / "report.txt").write_text("report\n")
+    ctx = _ctx(packages, scratch)
+
+    read = await handle_read_file(ctx, "notes.txt", "eng-source")
+    found = await handle_glob(ctx, "*.txt", "eng-source", path="reports")
+
+    assert read["content"] == "scratch-only"
+    assert read["path"] == str(scratch / "notes.txt")
+    assert found["files"] == [str(reports / "report.txt")]
+
+
+@pytest.mark.asyncio
+async def test_glob_rejects_parent_escape_in_pattern(packages, tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    ctx = _ctx(packages, scratch)
+
+    result = await handle_glob(ctx, "../*.txt", "eng-source")
+
+    assert "must stay below" in result["error"]
 
 
 @pytest.mark.asyncio

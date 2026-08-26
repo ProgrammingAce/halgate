@@ -749,8 +749,22 @@ class ScopeGate:
                         if not ref:
                             return False, ("glob requires a path or an engagement "
                                            "scratch directory"), engagement
+                        args["path"] = ref
                     else:
                         continue
+                if tool_name in {"read_file", "glob"}:
+                    # File tools treat relative paths as scratch-relative,
+                    # never relative to Halgate's process working directory.
+                    # Normalize the dispatched arguments so their handlers
+                    # operate on exactly the path that was authorized.
+                    candidate = Path(str(ref))
+                    if not candidate.is_absolute():
+                        if not engagement.scratch_dir:
+                            return False, (f"{tool_name} requires an engagement "
+                                           "scratch directory for relative paths"), engagement
+                        candidate = Path(engagement.scratch_dir) / candidate
+                    args["path"] = str(candidate)
+                    ref = str(candidate)
                 if tool_name == "read_source_code":
                     if not engagement.scratch_dir:
                         return False, "read_source_code requires an engagement scratch directory", engagement
