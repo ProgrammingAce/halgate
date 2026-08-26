@@ -61,6 +61,12 @@ class KeyStore:
         return result
 
     async def _ensure_ready(self) -> None:
+        # `_ready` records that this keystore has previously verified the
+        # envelope; it does not guarantee the process-wide crypto cache still
+        # contains its root key (a key rotation clears that cache).  Recheck
+        # before every async entry point so a TUI never falls through to
+        # NativeCrypto's terminal getpass provider.
+        await self._ensure_unlocked()
         if self._ready:
             return
         await self.verify()
