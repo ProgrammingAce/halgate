@@ -16,9 +16,13 @@ from urllib.parse import urlsplit
 
 from rich.markdown import Markdown
 from rich.markup import escape
+from rich.segment import Segment
+from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
 from textual.message import Message
+from textual.selection import Selection
+from textual.strip import Strip
 from textual.widgets import (
     Button, Checkbox, Input, RichLog, Select, Static,
     TabbedContent, TabPane, TextArea,
@@ -68,7 +72,8 @@ HELP_MARKDOWN = """\
 * **Esc** — cancel a running prompt (press again to dismiss)
 * **F1** — this help · **F5** — refresh panes
 * **Ctrl+Shift+[ / ]** — narrow / widen the chat panel
-* **Ctrl+Shift+C** — copy selection · **Ctrl+Shift+A** — copy transcript
+* **Highlight text** — copy it automatically · **Ctrl+Shift+C** — copy selection again
+* **Ctrl+Shift+A** — copy transcript
 * **Ctrl+Shift+V** — paste from system clipboard · **Ctrl+C** — quit
 * **?** button — this help · **⚙ button** — settings
 
@@ -134,6 +139,47 @@ def _note_renderable(content: str):
     if _is_preformatted(content):
         return content
     return Markdown(content)
+
+
+class SelectableRichLog(RichLog):
+    """A RichLog that visibly supports Textual's mouse text selection."""
+
+    def get_selection(self, selection: Selection) -> tuple[str, str] | None:
+        return selection.extract("\n".join(line.text for line in self.lines)), "\n"
+
+    def selection_updated(self, selection: Selection | None) -> None:
+        self._line_cache.clear()
+        self.refresh()
+
+    def render_line(self, y: int) -> Strip:
+        line = super().render_line(y)
+        scroll_x, scroll_y = self.scroll_offset
+        selection = self.text_selection
+        if selection is not None:
+            span = selection.get_span(y + scroll_y)
+            if span is not None:
+                start, end = span
+                start = max(0, start - scroll_x)
+                end = line.cell_length if end == -1 else min(
+                    line.cell_length, end - scroll_x)
+                if end > start:
+                    selection_style = self.screen.get_component_rich_style(
+                        "screen--selection")
+                    selected = line.crop(start, end)
+                    highlighted = Strip(
+                        Segment.apply_style(
+                            selected._segments, post_style=selection_style),
+                        selected.cell_length,
+                    )
+                    line = Strip.join((
+                        line.crop(0, start),
+                        highlighted,
+                        line.crop(end),
+                    ))
+        # Textual uses the per-segment offsets to turn a mouse position into a
+        # character location. RichLog omits them, which otherwise makes a drag
+        # select the whole widget instead of the requested text range.
+        return line.apply_offsets(scroll_x, y + scroll_y)
 
 
 def _exact_action_target(call: ToolCall) -> str | None:
@@ -313,8 +359,8 @@ class ChatPanel(Vertical):
 
     def __init__(self):
         super().__init__()
-        self._log = RichLog(highlight=True, markup=True, wrap=True,
-                            max_lines=2000)
+        self._log = SelectableRichLog(highlight=True, markup=True, wrap=True,
+                                      max_lines=2000)
         self._input = ChatInput(
             placeholder="Type your request or /command... (Shift+Enter for newline)",
             soft_wrap=True, show_line_numbers=False, id="chat-input")
@@ -324,8 +370,8 @@ class ChatPanel(Vertical):
             self._status, self._thinking, id="status-bar")
         self._activity_toggle = Button(
             "^^^ Expand ^^^", id="activity-toggle", compact=True)
-        self._activity = RichLog(highlight=True, markup=True, wrap=True,
-                                 max_lines=500, id="activity-log")
+        self._activity = SelectableRichLog(highlight=True, markup=True, wrap=True,
+                                           max_lines=500, id="activity-log")
         self._stream = Static("", id="stream-output")
         self._stream_text = ""
         self._stream_has_response = False
@@ -638,8 +684,8 @@ class PanePanel(Vertical):
 
     def __init__(self):
         super().__init__()
-        self._panes: dict[str, RichLog] = {}
-        self._notes: dict[str, RichLog] = {}
+        self._panes: dict[str, SelectableRichLog] = {}
+        self._notes: dict[str, SelectableRichLog] = {}
         self._pane_text: dict[str, str] = {}
         self._tab_titles: dict[str, str] = {}
         self._tab_engagements: dict[str, str] = {}
@@ -656,11 +702,11 @@ class PanePanel(Vertical):
         self._tools_btn = Button("Settings", id="pane-settings")
         self._split_view = Vertical(id="split-view")
         self._split_top_label = Static("", classes="split-label")
-        self._split_top_log = RichLog(highlight=True, markup=False, wrap=True,
-                                      max_lines=PANE_SCROLLBACK_LINES)
+        self._split_top_log = SelectableRichLog(highlight=True, markup=False, wrap=True,
+                                                max_lines=PANE_SCROLLBACK_LINES)
         self._split_bottom_label = Static("", classes="split-label")
-        self._split_bottom_log = RichLog(highlight=True, markup=False, wrap=True,
-                                         max_lines=PANE_SCROLLBACK_LINES)
+        self._split_bottom_log = SelectableRichLog(highlight=True, markup=False, wrap=True,
+                                                   max_lines=PANE_SCROLLBACK_LINES)
         self._split_view.compose_add_child(self._split_top_label)
         self._split_view.compose_add_child(self._split_top_log)
         self._split_view.compose_add_child(self._split_bottom_label)
@@ -698,7 +744,7 @@ class PanePanel(Vertical):
         # tables and reports, making stored panes effectively unreadable.
         # Notes preserve preformatted tables verbatim and render everything
         # else as Markdown so agent reports keep their structure.
-        note = RichLog(highlight=True, markup=False, wrap=True,
+        note = SelectableRichLog(highlight=True, markup=False, wrap=True,
                        max_lines=PANE_SCROLLBACK_LINES,
                        id=f"note-{len(self._notes) + 1}")
         note.write(_note_renderable(content))
@@ -728,7 +774,7 @@ class PanePanel(Vertical):
             if engagement_id:
                 self._tab_engagements[f"process-{pane_id}"] = engagement_id
             return
-        log = RichLog(highlight=True, markup=False, wrap=True,
+        log = SelectableRichLog(highlight=True, markup=False, wrap=True,
                       max_lines=PANE_SCROLLBACK_LINES, name=f"pane-{pane_id}")
         tab_id = f"process-{pane_id}"
         title = _safe_ui_label(name, fallback="Process pane")
@@ -1839,7 +1885,7 @@ class HelpModal(ModalScreen):
 
     def __init__(self) -> None:
         super().__init__()
-        self._log = RichLog(
+        self._log = SelectableRichLog(
             highlight=False, markup=False, wrap=True,
             max_lines=2000, id="help-log")
 
@@ -2233,6 +2279,10 @@ class HalgateApp(App):
         # before another already-pending call can open its own prompt.
         # This lock does not affect parallel tool execution.
         self._approval_decision_lock = asyncio.Lock()
+        # Selection is reported by Textual at the screen level. Remember the
+        # last value so an ordinary click after selecting text does not keep
+        # replacing the clipboard or producing duplicate notifications.
+        self._last_auto_copied_selection: str | None = None
 
     AUTO_FOCUS = "#chat-input"
 
@@ -2355,6 +2405,21 @@ class HalgateApp(App):
             event.stop()
             event.prevent_default()
             self._pane_panel.cycle_tab(-1)
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        """Copy newly completed text selections to the system clipboard."""
+        # Let the target widget finish Textual's selection handling before
+        # reading it. This also covers text selected in logs, panes, and
+        # modal content without special-casing each widget type.
+        self.call_after_refresh(self._copy_new_selection)
+
+    def _copy_new_selection(self) -> None:
+        """Copy the current selection once, if it changed since the last drag."""
+        selected = self.screen.get_selected_text()
+        if not selected or selected == self._last_auto_copied_selection:
+            return
+        self._last_auto_copied_selection = selected
+        self._copy_text(selected)
 
     def _cancel_running_prompt(self) -> bool:
         """Arm then cancel the live task; Escape remains normal otherwise."""

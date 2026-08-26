@@ -9,7 +9,11 @@ from unittest.mock import MagicMock
 import pytest
 from textual.app import App, ComposeResult
 from textual.css.scalar import Unit
+from textual.geometry import Offset
+from textual.selection import Selection
+from textual.strip import Strip
 from textual.widgets import Button, Checkbox, Input, RichLog, Select
+from rich.segment import Segment
 
 from halgate.scope import Engagement
 from halgate.tui import (
@@ -21,6 +25,7 @@ from halgate.tui import (
     OnboardingModal,
     PaneModal,
     PanePanel,
+    SelectableRichLog,
     _is_preformatted,
     _note_renderable,
     _safe_ui_label,
@@ -102,6 +107,58 @@ def _onboarding_app() -> HalgateApp:
     return HalgateApp(engine)
 
 
+def test_new_text_selection_is_copied_once() -> None:
+    """Mouse-selection copying should not repeat for an unchanged selection."""
+    app = SimpleNamespace(
+        screen=MagicMock(),
+        _last_auto_copied_selection=None,
+        _copy_text=MagicMock(),
+    )
+    app.screen.get_selected_text.return_value = "selected response"
+
+    HalgateApp._copy_new_selection(app)
+    HalgateApp._copy_new_selection(app)
+
+    app._copy_text.assert_called_once_with("selected response")
+
+
+def test_empty_text_selection_is_not_copied() -> None:
+    app = SimpleNamespace(
+        screen=MagicMock(),
+        _last_auto_copied_selection=None,
+        _copy_text=MagicMock(),
+    )
+    app.screen.get_selected_text.return_value = None
+
+    HalgateApp._copy_new_selection(app)
+
+    app._copy_text.assert_not_called()
+
+
+def test_selectable_rich_log_extracts_selected_text() -> None:
+    log = SelectableRichLog()
+    log.lines = [Strip([Segment("first")], 5), Strip([Segment("second")], 6)]
+
+    assert log.get_selection(Selection.from_offsets(Offset(1, 0), Offset(3, 1))) == (
+        "irst\nsec", "\n")
+
+
+@pytest.mark.asyncio
+async def test_selectable_rich_log_maps_mouse_positions_to_characters() -> None:
+    """Dragging in a log must select a character range, not the whole widget."""
+    async with ChatTestApp().run_test(size=(80, 24)) as pilot:
+        chat = pilot.app.query_one(ChatPanel)
+        log = chat._log
+        log.write("select this")
+        await pilot.pause()
+
+        widget, offset = pilot.app.screen.get_widget_and_offset_at(
+            log.content_region.x + 3, log.content_region.y)
+
+        assert widget is log
+        assert offset == Offset(3, 0)
+
+
 @pytest.mark.asyncio
 async def test_onboarding_modal_tab_reaches_fields_and_buttons() -> None:
     """Tab must walk the modal's fields and buttons, not get hijacked by app."""
@@ -155,11 +212,13 @@ async def test_split_view_shows_two_panes_and_closes_top() -> None:
         await pilot.pause()
         assert panel._split is True
         assert {panel._split_top, panel._split_bottom} == {"note-1", "note-2"}
+        top = panel._split_top
 
         assert panel.close_active() is None
         await pilot.pause()
         assert panel._split is False
-        assert panel._tab_ids == ["note-1"]
+        assert panel._tab_ids == [
+            tab_id for tab_id in ("note-1", "note-2") if tab_id != top]
 
 
 @pytest.mark.asyncio
