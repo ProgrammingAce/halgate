@@ -140,6 +140,11 @@ class Engagement:
     target: str
     package: str
     budget_overrides: dict[str, int] = field(default_factory=dict)
+    budgets_disabled: bool = False
+    # Session-level selections made in the Tools dialog.  An explicit value
+    # overrides the package for this engagement only; omitted tools retain the
+    # package policy.
+    tool_overrides: dict[str, bool] = field(default_factory=dict)
     jwt_claim_extensions: tuple[str, ...] = ()
     status: str = "active"             # "active" | "paused"
     created: str = ""
@@ -438,7 +443,8 @@ class ScopeGate:
     def any_active_engagement_permits(self, tool_name: str) -> bool:
         """Schema visibility: tool appears to the LLM if any active
         engagement permits it. Authorization remains engagement-specific."""
-        return any(pkg.permits(tool_name) for pkg in self.active_packages())
+        return any(self.check_tool(tool_name, engagement.id)[0]
+                   for engagement in self.active_engagements())
 
     def _require_active(self, engagement_id: str) -> Engagement:
         eng = self._find(engagement_id)
@@ -456,18 +462,16 @@ class ScopeGate:
 
     def check_tool(self, tool_name: str, engagement_id: str) -> tuple[bool, str]:
         """Is this tool permitted by the explicitly selected active engagement?"""
-        if tool_name in self._overrides:
-            # Operator override wins over the package, but the engagement must
-            # exist and be active (no override can resurrect paused work).
-            try:
-                self._require_active(engagement_id)
-            except ScopeError as e:
-                return False, str(e)
-            return (self._overrides[tool_name], "")
         try:
             engagement = self._require_active(engagement_id)
         except ScopeError as e:
             return False, str(e)
+        if tool_name in engagement.tool_overrides:
+            return (engagement.tool_overrides[tool_name], "")
+        if tool_name in self._overrides:
+            # Operator override wins over the package, but the engagement must
+            # exist and be active (no override can resurrect paused work).
+            return (self._overrides[tool_name], "")
         pkg = self._packages.get(engagement.package)
         if pkg is None:
             return False, (f"engagement '{engagement_id}' references unknown "

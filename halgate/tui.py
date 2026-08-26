@@ -653,6 +653,7 @@ class PanePanel(Vertical):
         self._close_btn = Button("Close", id="close-pane")
         self._save_btn  = Button("Save", id="save-pane")
         self._load_btn  = Button("Load", id="load-pane")
+        self._tools_btn = Button("Settings", id="pane-settings")
         self._split_view = Vertical(id="split-view")
         self._split_top_label = Static("", classes="split-label")
         self._split_top_log = RichLog(highlight=True, markup=False, wrap=True,
@@ -716,7 +717,8 @@ class PanePanel(Vertical):
         yield self._header
         yield self._tabs
         yield self._split_view
-        yield Horizontal(self._split_btn, self._save_btn, self._load_btn, self._close_btn,
+        yield Horizontal(self._split_btn, self._save_btn, self._load_btn, self._tools_btn,
+                         self._close_btn,
                          id="pane-controls")
 
     def add_pane(self, pane_id: str, name: str, engagement_id: str = "") -> None:
@@ -907,6 +909,135 @@ class PanePanel(Vertical):
             return None
         return (self._tab_titles.get(tab_id, "pane"),
                 self._pane_text.get(tab_id, ""), engagement_id)
+
+
+class ToolsModal(ModalScreen):
+    """Choose the tools exposed to the model for one live engagement."""
+
+    GROUPS = (
+        ("files", "Files", {"read_file", "read_source_code", "write_file", "glob", "grep"}),
+        ("network", "Network", {"http", "http_replay", "http_session", "auth_session",
+                                   "multipart_upload", "websocket", "tcp_probe", "scan",
+                                   "request_callback_endpoint", "read_callback_endpoint"}),
+        ("jwt", "JWT", {"jwt_sign", "jwt_inspect"}),
+        ("memory", "Memory", {"memory_remember", "memory_recall", "memory_forget",
+                                 "memory_edit", "memory_pin", "memory_unpin"}),
+        ("panes", "Panes", {"pane_spawn", "pane_write", "pane_read", "pane_kill",
+                              "pane_list", "pane_note"}),
+        ("data", "Data inspection", {"json_extract", "base64_decode", "binary_inspect"}),
+        ("execution", "Execution", {"shell"}),
+    )
+
+    CSS = """
+    ToolsModal {
+        width: 100%;
+        height: 100%;
+        background: $surface;
+    }
+    ToolsModal > Vertical { padding: 1 2; }
+    ToolsModal TabbedContent { height: 1fr; margin: 1 0; }
+    ToolsModal .tool-list { height: 1fr; padding: 1 2; }
+    ToolsModal .tool-row { height: auto; margin-bottom: 1; }
+    ToolsModal .tool-description { width: 1fr; color: $text-muted; }
+    ToolsModal Checkbox { width: 28; }
+    ToolsModal .tool-group { text-style: bold; margin-top: 1; }
+    ToolsModal Button { margin-right: 1; }
+    """
+
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+
+    def __init__(self, engagement, tools: list[dict[str, str]]):
+        super().__init__()
+        self._engagement = engagement
+        self._tools = tools
+        self._syncing_groups = False
+        grouped_names = {name for _, _, names in self.GROUPS for name in names}
+        self._groups = [
+            (key, label, [tool for tool in tools if tool["name"] in names])
+            for key, label, names in self.GROUPS
+        ]
+        other = [tool for tool in tools if tool["name"] not in grouped_names]
+        if other:
+            self._groups.append(("other", "Other", other))
+
+    def _enabled(self, name: str) -> bool:
+        selected = self._engagement.tool_overrides.get(name)
+        return (self.app.h.gate.check_tool(name, self._engagement.id)[0]
+                if selected is None else selected)
+
+    def compose(self) -> ComposeResult:
+        tabs = []
+        for key, label, tools in self._groups:
+            if not tools:
+                continue
+            rows = [
+                Static(f"[bold]{label} tools[/bold]"),
+                Checkbox(f"Enable all {label} tools",
+                         value=all(self._enabled(t["name"]) for t in tools),
+                         id=f"tool-group-{key}", classes="tool-group"),
+                Static(""),
+            ]
+            for tool in tools:
+                name = tool["name"]
+                rows.append(Horizontal(
+                    Checkbox(name, value=self._enabled(name), id=f"tool-toggle-{name}"),
+                    Static(tool["description"], classes="tool-description"),
+                    classes="tool-row"))
+            tabs.append(TabPane(label, ScrollableContainer(*rows, classes="tool-list"),
+                                id=f"tool-tab-{key}"))
+        tabbed = TabbedContent(id="tools-tabs")
+        for tab in tabs:
+            tabbed.compose_add_child(tab)
+        yield Vertical(
+            Static(f"[bold]Tools — {self._engagement.label}[/bold]"),
+            Static("Changes apply only to this engagement for the current session."),
+            tabbed,
+            Horizontal(Button("Save", variant="success", id="tools-save"),
+                       Button("Cancel", id="tools-cancel")),
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "tools-cancel":
+            self.dismiss(None)
+        elif event.button.id == "tools-save":
+            choices = {
+                tool["name"]: self.query_one(
+                    f"#tool-toggle-{tool['name']}", Checkbox).value
+                for tool in self._tools
+            }
+            self.dismiss(choices)
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Keep group checkboxes and their member tools in sync."""
+        if self._syncing_groups or not event.checkbox.id:
+            return
+        control_id = event.checkbox.id
+        if control_id.startswith("tool-group-"):
+            key = control_id.removeprefix("tool-group-")
+            group = next((tools for group_key, _, tools in self._groups
+                          if group_key == key), [])
+            self._syncing_groups = True
+            try:
+                for tool in group:
+                    self.query_one(f"#tool-toggle-{tool['name']}", Checkbox).value = event.value
+            finally:
+                self._syncing_groups = False
+            return
+        if not control_id.startswith("tool-toggle-"):
+            return
+        name = control_id.removeprefix("tool-toggle-")
+        group_key = next((key for key, _, tools in self._groups
+                          if any(tool["name"] == name for tool in tools)), None)
+        if group_key is None:
+            return
+        group = next(tools for key, _, tools in self._groups if key == group_key)
+        self._syncing_groups = True
+        try:
+            self.query_one(f"#tool-group-{group_key}", Checkbox).value = all(
+                self.query_one(f"#tool-toggle-{tool['name']}", Checkbox).value
+                for tool in group)
+        finally:
+            self._syncing_groups = False
 
 
 class ScratchPickerModal(ModalScreen):
@@ -1723,10 +1854,149 @@ class HelpModal(ModalScreen):
         self.dismiss()
 
 
-class ConfigModal(ModalScreen):
-    """Settings: LLM endpoint + tool availability toggles."""
+class BudgetModal(ModalScreen):
+    """Edit an engagement's live budget without clearing its usage."""
 
-    AUTO_FOCUS = "#cfg-url"
+    LIMITS = (
+        ("max_actions", "Actions"), ("max_requests", "Network requests"),
+        ("max_scan_targets", "Scan targets"), ("max_bytes_in", "Bytes received"),
+        ("max_bytes_out", "Bytes sent"), ("max_runtime_seconds", "Runtime (seconds)"),
+    )
+    CSS = """
+    BudgetModal { width: 72; height: auto; max-height: 90%; align: center middle;
+                  background: $surface; border: tall $accent; }
+    BudgetModal > Vertical { padding: 1 2; }
+    BudgetModal .budget-row { height: 3; layout: horizontal; }
+    BudgetModal .budget-row Static { width: 26; }
+    BudgetModal .budget-row Input { width: 1fr; }
+    """
+
+    def __init__(self, engagement):
+        super().__init__()
+        self._engagement = engagement
+
+    def compose(self) -> ComposeResult:
+        limits = self.app.h.budgets.limits(self._engagement.id)
+        disabled = self._engagement.budgets_disabled
+        yield Vertical(
+            Static(f"[bold]Budget — {self._engagement.label}[/bold]"),
+            Checkbox("Disable budgets", value=disabled, id="budget-disabled"),
+            Static("Custom limits take effect immediately; existing usage is retained."),
+            *[Horizontal(Static(label), Input(value=str(getattr(limits, key)),
+                                              id=f"budget-{key}", disabled=disabled),
+                        classes="budget-row") for key, label in self.LIMITS],
+            Horizontal(Button("Save", variant="success", id="budget-save"),
+                       Button("Cancel", id="budget-cancel")),
+        )
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "budget-disabled":
+            for key, _ in self.LIMITS:
+                self.query_one(f"#budget-{key}", Input).disabled = event.value
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "budget-cancel":
+            self.dismiss(None)
+            return
+        if event.button.id != "budget-save":
+            return
+        disabled = self.query_one("#budget-disabled", Checkbox).value
+        values: dict[str, int] = {}
+        if not disabled:
+            try:
+                values = {key: int(self.query_one(f"#budget-{key}", Input).value)
+                          for key, _ in self.LIMITS}
+            except ValueError:
+                self.app.notify("Each budget limit must be a whole number.", severity="error")
+                return
+            if any(value <= 0 for value in values.values()):
+                self.app.notify("Each budget limit must be greater than zero.", severity="error")
+                return
+        self.dismiss({"disabled": disabled, "limits": values})
+
+
+class SafetyModal(ModalScreen):
+    """Live safety controls that are appropriate to change mid-engagement."""
+
+    CSS = """
+    SafetyModal { width: 72; height: auto; align: center middle; background: $surface;
+                  border: tall $accent; }
+    SafetyModal > Vertical { padding: 1 2; }
+    SafetyModal Checkbox { margin-top: 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        safety = self.app.h.config.safety
+        injection = safety.prompt_injection
+        yield Vertical(
+            Static("[bold]Safety controls[/bold]"),
+            Checkbox("Dry run — show planned actions without executing them",
+                     value=safety.dry_run, id="safety-dry-run"),
+            Checkbox("Warn about prompt-injection patterns", value=injection.warn_patterns,
+                     id="safety-injection-warn"),
+            Checkbox("Require confirmation for actionable untrusted content",
+                     value=injection.require_confirmation_for_actionable_untrusted_content,
+                     id="safety-untrusted-confirm"),
+            Horizontal(Button("Save", variant="success", id="safety-save"),
+                       Button("Cancel", id="safety-cancel")),
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "safety-cancel":
+            self.dismiss(None)
+        elif event.button.id == "safety-save":
+            self.dismiss({
+                "dry_run": self.query_one("#safety-dry-run", Checkbox).value,
+                "warn_patterns": self.query_one("#safety-injection-warn", Checkbox).value,
+                "untrusted_confirmation": self.query_one(
+                    "#safety-untrusted-confirm", Checkbox).value,
+            })
+
+
+class AuditEvidenceModal(ModalScreen):
+    """Display audit/evidence storage and update safe retention settings."""
+
+    CSS = """
+    AuditEvidenceModal { width: 76; height: auto; align: center middle; background: $surface;
+                         border: tall $accent; }
+    AuditEvidenceModal > Vertical { padding: 1 2; }
+    AuditEvidenceModal Input { margin: 1 0; }
+    """
+
+    def compose(self) -> ComposeResult:
+        config = self.app.h.config
+        yield Vertical(
+            Static("[bold]Audit & evidence[/bold]"),
+            Static(f"Audit log: {config.audit.dir}"),
+            Static(f"Evidence: {config.evidence.dir}"),
+            Checkbox("Store encrypted forensic payloads", value=config.audit.forensic_enabled,
+                     id="audit-forensics"),
+            Static("Evidence retention (days)"),
+            Input(value=str(config.evidence.retention_days), id="evidence-retention"),
+            Horizontal(Button("Save", variant="success", id="audit-save"),
+                       Button("Cancel", id="audit-cancel")),
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "audit-cancel":
+            self.dismiss(None)
+        elif event.button.id == "audit-save":
+            try:
+                retention = int(self.query_one("#evidence-retention", Input).value)
+            except ValueError:
+                self.app.notify("Retention must be a whole number of days.", severity="error")
+                return
+            if retention < 1:
+                self.app.notify("Retention must be at least one day.", severity="error")
+                return
+            self.dismiss({"forensics": self.query_one("#audit-forensics", Checkbox).value,
+                          "retention": retention})
+
+
+class ConfigModal(ModalScreen):
+    """Settings: LLM endpoint and engagement tool access."""
+
+    AUTO_FOCUS = "#cfg-tools"
 
     CSS = """
     ConfigModal {
@@ -1741,22 +2011,9 @@ class ConfigModal(ModalScreen):
         text-style: bold;
         margin-top: 1;
     }
-    ConfigModal Input {
-        margin: 0 0 1 0;
-    }
-    ConfigModal .cfg-row {
-        layout: horizontal;
-        margin-bottom: 1;
-    }
-    ConfigModal .cfg-row Label {
-        width: 20;
-    }
-    ConfigModal .cfg-row Input {
-        width: 1fr;
-        margin: 0;
-    }
     ConfigModal Button {
         margin-left: 2;
+        margin-top: 1;
     }
     """
 
@@ -1766,9 +2023,7 @@ class ConfigModal(ModalScreen):
 
     def __init__(self, endpoint: list, tools: list[dict],
                  active_pkg: str):
-        """endpoint = [base_url, model, api_key, temperature, max_tokens]
-        tools = [{'name': str, 'enabled': bool}, ...]
-        """
+        """Legacy endpoint/tool inputs are retained for call compatibility."""
         super().__init__()
         self._endpoint = endpoint
         self._tools = list(tools)
@@ -1776,68 +2031,37 @@ class ConfigModal(ModalScreen):
 
     def compose(self) -> ComposeResult:
         yield Vertical(
-            Static("Configuration", classes="cfg-section"),
-            Static("LLM Endpoint", classes="cfg-section"),
-            Static("  Base URL (e.g. http://127.0.0.1:8080/v1)"),
-            Input(value=self._endpoint[0], id="cfg-url"),
-            Static("  Model"),
-            Input(value=self._endpoint[1], id="cfg-model"),
-            Static("  API Key (blank for local)"),
-            Input(value=self._endpoint[2], password=True, id="cfg-key"),
-            Static("  Temperature"),
-            Input(value=str(self._endpoint[3]), id="cfg-temp"),
-            Static("  Max Tokens"),
-            Input(value=str(self._endpoint[4]), id="cfg-maxtok"),
-            Static(" ", ),
-            Static(f"Tools ({self._active_pkg} package)",
-                   classes="cfg-section"),
-            *[
-                Static(f"  [{'x' if t['enabled'] else ' '}] {t['name']}")
-                for t in self._tools
-            ],
+            Static("Engagement settings", classes="cfg-section"),
+            Static(f"Package: {self._active_pkg}"),
+            Static("These changes affect the active engagement, not the LLM connection."),
+            Button("Tools…", id="cfg-tools"),
+            Button("Budget…", id="cfg-budget"),
+            Button("Safety…", id="cfg-safety"),
+            Button("Audit & Evidence…", id="cfg-audit"),
+            Button("Reset auto-approvals", id="cfg-reset"),
             Static(" "),
             Horizontal(
-                Button("Save", variant="success", id="cfg-save"),
-                Button("Cancel", id="cfg-cancel"),
+                Button("Close", id="cfg-cancel"),
             ),
         )
 
     def on_button_pressed(self, e: Button.Pressed) -> None:
         if e.button.id == "cfg-cancel":
             self.dismiss()
-        elif e.button.id == "cfg-save":
-            self._save()
-
-    def _save(self) -> None:
-        base_url = self.query_one("#cfg-url", Input).value.strip()
-        model = self.query_one("#cfg-model", Input).value.strip()
-        api_key = self.query_one("#cfg-key", Input).value.strip()
-        temp = self.query_one("#cfg-temp", Input).value.strip() or "0.3"
-        maxtok = self.query_one("#cfg-maxtok", Input).value.strip() or "4096"
-        try:
-            temperature = float(temp)
-            max_tokens = int(maxtok)
-        except ValueError:
-            self.app.notify("Temperature and max tokens must be numbers.", severity="error")
-            self.query_one("#cfg-temp", Input).focus()
-            return
-        if not base_url or not model or not 0 <= temperature <= 2 or max_tokens <= 0:
-            self.app.notify("Enter a URL/model, temperature 0–2, and positive token count.",
-                            severity="error")
-            return
-        self.post_message(ConfigModal.Saved(base_url, model, api_key,
-                                            temperature, max_tokens))
-        self.dismiss()
-
-    class Saved(Message):
-        def __init__(self, base_url: str, model: str, api_key: str,
-                     temperature: float, max_tokens: int):
-            self.base_url = base_url
-            self.model = model
-            self.api_key = api_key
-            self.temperature = temperature
-            self.max_tokens = max_tokens
-            super().__init__()
+        elif e.button.id == "cfg-tools":
+            # Dismiss before opening the next modal so focus and Escape return
+            # cleanly to the main screen.
+            self.dismiss()
+            self.app.call_after_refresh(self.app._open_tools)
+        elif e.button.id in {"cfg-budget", "cfg-safety", "cfg-audit", "cfg-reset"}:
+            action = {
+                "cfg-budget": self.app._open_budget,
+                "cfg-safety": self.app._open_safety,
+                "cfg-audit": self.app._open_audit_evidence,
+                "cfg-reset": self.app._reset_auto_approvals,
+            }[e.button.id]
+            self.dismiss()
+            self.app.call_after_refresh(action)
 
 
 class HalgateApp(App):
@@ -2099,6 +2323,8 @@ class HalgateApp(App):
             asyncio.create_task(self._save_active_pane())
         elif e.button.id == "load-pane":
             self._open_scratch_picker()
+        elif e.button.id == "pane-settings":
+            self._open_config()
 
     def on_key(self, event: events.Key) -> None:
         """Handle prompt cancellation and right-panel keyboard navigation."""
@@ -2438,38 +2664,102 @@ class HalgateApp(App):
 
     def _open_config(self) -> None:
         ep = self.h.router.active_endpoint
-        tools = []
-        if self.h.engagements:
-            pkg = self.h.config.packages.get(
-                self.h.engagements[0].package)
-            if pkg and pkg.tools:
-                for name, enabled in pkg.tools.items():
-                    tools.append({"name": name, "enabled": bool(enabled)})
-        else:
-            for name in ("read_file", "write_file", "glob", "grep",
-                         "shell", "http", "scan", "memory_remember",
-                         "memory_recall"):
-                tools.append({"name": name, "enabled": True})
         active_pkg = (self.h.engagements[0].package
                       if self.h.engagements
                       else self.h.config.scope.package)
         self.push_screen(ConfigModal(
             [ep.base_url, ep.model, ep.api_key,
              ep.temperature, ep.max_tokens],
-            tools, active_pkg))
+            [], active_pkg))
 
-    async def on_config_modal_saved(self, msg: ConfigModal.Saved) -> None:
-        ep = self.h.config.llm.active_endpoint
-        ep.base_url = msg.base_url
-        ep.model = msg.model
-        ep.api_key = msg.api_key
-        ep.temperature = msg.temperature
-        ep.max_tokens = msg.max_tokens
-        await self.h.router.reload(ep.id)
-        self._chat.add_agent(
-            f"[green]Config updated: {ep.model} @ {ep.base_url} "
-            f"temp={ep.temperature} maxtok={ep.max_tokens}[/green]")
-        self._refresh_identity(llm=f"{ep.id}:{ep.model}")
+    def _selected_engagement(self):
+        """Return the engagement owning the selected pane, if unambiguous."""
+        active = self.h.gate.active_engagements()
+        if not active:
+            self.notify("Start an engagement before opening its settings.", severity="warning")
+            return None
+        snapshot = self._pane_panel.active_snapshot() if self._pane_panel else None
+        selected = next((item for item in active
+                         if snapshot and item.id == snapshot[2]), None)
+        if selected is not None:
+            return selected
+        if len(active) == 1:
+            return active[0]
+        self.notify("Select an engagement-bound pane before changing settings.",
+                    severity="warning")
+        return None
+
+    def _open_tools(self) -> None:
+        """Open the per-engagement tool picker from Settings."""
+        engagement = self._selected_engagement()
+        if engagement is None:
+            return
+
+        def saved(choices: dict[str, bool] | None) -> None:
+            if choices is None:
+                return
+            engagement.tool_overrides = choices
+            enabled = sum(choices.values())
+            self.h.audit.tool_call("tool_selection", {
+                "engagement_id": engagement.id, "enabled": enabled,
+            }, engagement.id)
+            self.h.audit.tool_result("tool_selection", {
+                "enabled": enabled, "total": len(choices),
+            }, 0, engagement_id=engagement.id)
+            self.notify(f"Saved {enabled}/{len(choices)} tools for {engagement.label}.")
+
+        self.push_screen(ToolsModal(engagement, self.h.registry.tool_details()), saved)
+
+    def _open_budget(self) -> None:
+        engagement = self._selected_engagement()
+        if engagement is None:
+            return
+        self.push_screen(BudgetModal(engagement),
+                         lambda values: self._save_budget(engagement, values))
+
+    def _save_budget(self, engagement, values: dict[str, Any] | None) -> None:
+        if values is None:
+            return
+        engagement.budgets_disabled = bool(values["disabled"])
+        if not engagement.budgets_disabled:
+            engagement.budget_overrides = dict(values["limits"])
+        self.h.budgets.update_limits(engagement)
+        self.h.audit.tool_call("budget_settings", {"engagement_id": engagement.id,
+                               "disabled": engagement.budgets_disabled}, engagement.id)
+        self.h.audit.tool_result("budget_settings", {
+            "disabled": engagement.budgets_disabled,
+            "limits": engagement.budget_overrides,
+        }, 0,
+                                 engagement_id=engagement.id)
+        self.notify("Budgets disabled for this engagement." if engagement.budgets_disabled
+                    else "Custom budget saved.")
+
+    def _open_safety(self) -> None:
+        self.push_screen(SafetyModal(), self._save_safety)
+
+    def _save_safety(self, values: dict[str, bool] | None) -> None:
+        if values is None:
+            return
+        safety = self.h.config.safety
+        safety.dry_run = values["dry_run"]
+        safety.prompt_injection.warn_patterns = values["warn_patterns"]
+        safety.prompt_injection.require_confirmation_for_actionable_untrusted_content = (
+            values["untrusted_confirmation"])
+        self.notify("Safety settings saved.")
+
+    def _open_audit_evidence(self) -> None:
+        self.push_screen(AuditEvidenceModal(), self._save_audit_evidence)
+
+    def _save_audit_evidence(self, values: dict[str, int | bool] | None) -> None:
+        if values is None:
+            return
+        self.h.config.audit.forensic_enabled = bool(values["forensics"])
+        self.h.config.evidence.retention_days = int(values["retention"])
+        self.notify("Audit and evidence settings saved.")
+
+    def _reset_auto_approvals(self) -> None:
+        self._clear_target_auto_approvals("operator reset")
+        self.notify("Session auto-approvals reset.")
 
     def _restore_chat_history(self) -> None:
         if self._chat:

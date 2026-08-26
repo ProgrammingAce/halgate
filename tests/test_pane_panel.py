@@ -441,8 +441,8 @@ async def test_onboarding_clicks_use_native_control_focus() -> None:
 
 
 @pytest.mark.asyncio
-async def test_config_modal_focuses_url_input() -> None:
-    """Settings opens ready for keyboard input, not with no focused widget."""
+async def test_config_modal_focuses_tools_button() -> None:
+    """Engagement settings opens ready for keyboard navigation."""
     class ConfigApp(App):
         AUTO_FOCUS = "#unrelated"
 
@@ -453,8 +453,8 @@ async def test_config_modal_focuses_url_input() -> None:
 
     async with ConfigApp().run_test() as pilot:
         await pilot.pause()
-        url = pilot.app.screen.query_one("#cfg-url", Input)
-        assert pilot.app.focused is url
+        tools = pilot.app.screen.query_one("#cfg-tools", Button)
+        assert pilot.app.focused is tools
 
 
 def _halgate_stub(chat_width_pct: int) -> SimpleNamespace:

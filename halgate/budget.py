@@ -54,6 +54,13 @@ class BudgetManager:
         self._engagements = {e.id: e for e in engagements}
         self._states.clear()
 
+    def update_limits(self, engagement: Engagement) -> None:
+        """Apply changed per-engagement limits without resetting usage."""
+        self._engagements[engagement.id] = engagement
+        state = self._states.get(engagement.id)
+        if state is not None:
+            state.limits = self.limits(engagement.id)
+
     def limits(self, engagement_id: str) -> BudgetLimits:
         limits = self._defaults.model_copy(deep=True)
         eng = self._engagements.get(engagement_id)
@@ -62,6 +69,10 @@ class BudgetManager:
                 if hasattr(limits, key) and isinstance(value, int):
                     setattr(limits, key, value)
         return limits
+
+    def disabled(self, engagement_id: str) -> bool:
+        engagement = self._engagements.get(engagement_id)
+        return bool(engagement and engagement.budgets_disabled)
 
     def _state(self, engagement_id: str) -> BudgetState:
         if engagement_id not in self._engagements:
@@ -76,6 +87,10 @@ class BudgetManager:
 
         Single-threaded event loop => plain check-and-reserve is atomic.
         """
+        if self.disabled(engagement_id):
+            # Keep dispatch's reserve/release/settle flow intact while making
+            # the operator's explicit per-engagement disablement a no-op.
+            return BudgetReservation(engagement_id, kind, 0)
         if kind == "runtime":
             state = self._state(engagement_id)
             if time.monotonic() - state.started > state.limits.max_runtime_seconds:
@@ -122,6 +137,8 @@ class BudgetManager:
         self.settle(reservation)
 
     def status(self, engagement_id: str) -> dict:
+        if self.disabled(engagement_id):
+            return {"engagement": engagement_id, "disabled": True}
         state = self._state(engagement_id)
         out: dict = {"engagement": engagement_id}
         for kind in KINDS + ("max_runtime_seconds",):

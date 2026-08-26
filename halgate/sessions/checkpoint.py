@@ -57,6 +57,8 @@ class SessionCheckpoint:
                     "id": e.id, "label": e.label, "target": e.target,
                     "package": e.package,
                     "budget_overrides": e.budget_overrides,
+                    "budgets_disabled": e.budgets_disabled,
+                    "tool_overrides": e.tool_overrides,
                     "jwt_claim_extensions": list(e.jwt_claim_extensions),
                     "status": e.status, "created": e.created,
                 }
@@ -114,6 +116,8 @@ class SessionCheckpoint:
                 id=s["id"], label=s["label"], target=s["target"],
                 package=s["package"],
                 budget_overrides=s.get("budget_overrides", {}),
+                budgets_disabled=bool(s.get("budgets_disabled", False)),
+                tool_overrides=s.get("tool_overrides", {}),
                 status=s.get("status", "active"), created=s.get("created", ""),
                 jwt_claim_extensions=tuple(s.get("jwt_claim_extensions", [])),
             )

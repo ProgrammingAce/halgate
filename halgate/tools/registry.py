@@ -48,6 +48,21 @@ class ToolRegistry:
                 schemas.append({"type": "function", "function": desc})
         return schemas
 
+    def tool_details(self) -> list[dict[str, str]]:
+        """Return every registered tool with its operator-facing description."""
+        def short_description(schema: dict) -> str:
+            description = str(schema.get("description", "")).strip()
+            first_sentence = description.split(". ", 1)[0].strip()
+            if first_sentence and first_sentence != description:
+                first_sentence += "."
+            return (first_sentence[:197].rstrip() + "…"
+                    if len(first_sentence) > 198 else first_sentence)
+
+        return [
+            {"name": name, "description": short_description(schema)}
+            for name, schema in sorted(self._descriptions.items())
+        ]
+
     async def call(self, name: str, args: dict) -> dict:
         """Reject direct execution; dispatch owns approval, budgets, and audit."""
         return {"error": ("tools must be invoked through dispatch_parallel; "
