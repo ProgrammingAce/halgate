@@ -145,6 +145,8 @@ class Engagement:
     # overrides the package for this engagement only; omitted tools retain the
     # package policy.
     tool_overrides: dict[str, bool] = field(default_factory=dict)
+    # Per-engagement safety controls override the global config fallback.
+    safety_overrides: dict[str, bool] = field(default_factory=dict)
     jwt_claim_extensions: tuple[str, ...] = ()
     status: str = "active"             # "active" | "paused"
     created: str = ""

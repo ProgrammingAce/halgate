@@ -433,7 +433,12 @@ class Halgate:
             msgs, panes,
             self.engagements,
             llm_id=self.router.active_endpoint.id,
-            resumed_from=None)
+            resumed_from=None,
+            session_settings={
+                "forensic_enabled": self.config.audit.forensic_enabled,
+                "retention_days": self.config.evidence.retention_days,
+                "chat_width_pct": self.config.tui.chat_width_pct,
+            })
         self.audit.session_end("checkpoint")
 
     def add_engagement(self, engagement: Engagement) -> None:
@@ -457,6 +462,13 @@ class Halgate:
         if unknown:
             raise ValueError(f"saved session uses unknown scope package(s): "
                            f"{', '.join(sorted(set(unknown)))}")
+        settings = restored.session_settings
+        if "forensic_enabled" in settings:
+            self.config.audit.forensic_enabled = bool(settings["forensic_enabled"])
+        if "retention_days" in settings:
+            self.config.evidence.retention_days = int(settings["retention_days"])
+        if "chat_width_pct" in settings:
+            self.config.tui.chat_width_pct = int(settings["chat_width_pct"])
         restored_ids = [e.id for e in restored.engagements]
         if len(restored_ids) != len(set(restored_ids)):
             raise ValueError("saved session contains duplicate engagement ids")

@@ -29,6 +29,7 @@ class RestoredSession:
     engagements: list[Engagement] = field(default_factory=list)
     llm_id: str = ""
     resumed_from: str | None = None
+    session_settings: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
 
 
@@ -45,7 +46,8 @@ class SessionCheckpoint:
              panes: list[dict], engagements: list[Engagement], llm_id: str,
              resumed_from: str | None, created: str | None = None,
              audit_path: str | None = None, audit_seq: int = 0,
-             extra_meta: dict | None = None) -> Path:
+             extra_meta: dict | None = None,
+             session_settings: dict | None = None) -> Path:
         meta = {
             "session_id": session_id,
             "name": name,
@@ -59,6 +61,7 @@ class SessionCheckpoint:
                     "budget_overrides": e.budget_overrides,
                     "budgets_disabled": e.budgets_disabled,
                     "tool_overrides": e.tool_overrides,
+                    "safety_overrides": e.safety_overrides,
                     "jwt_claim_extensions": list(e.jwt_claim_extensions),
                     "status": e.status, "created": e.created,
                 }
@@ -73,6 +76,8 @@ class SessionCheckpoint:
             },
             **(extra_meta or {}),
         }
+        if session_settings is not None:
+            meta["session_settings"] = session_settings
         meta_path = self._dir / "meta.json"
         existing = meta_path.read_text() if meta_path.exists() else None
         if existing:
@@ -118,6 +123,7 @@ class SessionCheckpoint:
                 budget_overrides=s.get("budget_overrides", {}),
                 budgets_disabled=bool(s.get("budgets_disabled", False)),
                 tool_overrides=s.get("tool_overrides", {}),
+                safety_overrides=s.get("safety_overrides", {}),
                 status=s.get("status", "active"), created=s.get("created", ""),
                 jwt_claim_extensions=tuple(s.get("jwt_claim_extensions", [])),
             )
@@ -131,6 +137,7 @@ class SessionCheckpoint:
             engagements=engagements,
             llm_id=meta.get("llm_id", ""),
             resumed_from=meta.get("resumed_from"),
+            session_settings=meta.get("session_settings", {}),
             meta=meta,
         )
 

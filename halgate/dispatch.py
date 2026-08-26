@@ -159,7 +159,7 @@ async def dispatch_parallel(
                         engagement.id)
 
             # Dry-run mode
-            if config.safety.dry_run:
+            if engagement.safety_overrides.get("dry_run", config.safety.dry_run):
                 plan = _build_dry_run_plan(tc, engagement)
                 audit.guard_decision(tc.name, True, f"dry-run: {plan}")
                 if reservation is not None:

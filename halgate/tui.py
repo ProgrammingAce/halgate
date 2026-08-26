@@ -2010,17 +2010,20 @@ class SafetyModal(ModalScreen):
     SafetyModal Checkbox { margin-top: 1; }
     """
 
+    def __init__(self, initial_values: dict[str, bool]) -> None:
+        super().__init__()
+        self._initial_values = initial_values
+
     def compose(self) -> ComposeResult:
-        safety = self.app.h.config.safety
-        injection = safety.prompt_injection
         yield Vertical(
             Static("[bold]Safety controls[/bold]"),
             Checkbox("Dry run — show planned actions without executing them",
-                     value=safety.dry_run, id="safety-dry-run"),
-            Checkbox("Warn about prompt-injection patterns", value=injection.warn_patterns,
+                     value=self._initial_values["dry_run"], id="safety-dry-run"),
+            Checkbox("Warn about prompt-injection patterns",
+                     value=self._initial_values["warn_patterns"],
                      id="safety-injection-warn"),
             Checkbox("Require confirmation for actionable untrusted content",
-                     value=injection.require_confirmation_for_actionable_untrusted_content,
+                     value=self._initial_values["untrusted_confirmation"],
                      id="safety-untrusted-confirm"),
             Horizontal(Button("Save", variant="success", id="safety-save"),
                        Button("Cancel", id="safety-cancel")),
@@ -2118,7 +2121,8 @@ class ConfigModal(ModalScreen):
         yield Vertical(
             Static("Engagement settings", classes="cfg-section"),
             Static(f"Package: {self._active_pkg}"),
-            Static("These changes affect the active engagement, not the LLM connection."),
+            Static("Tools, budgets, and safety affect the active engagement; "
+                   "audit and evidence apply to this session."),
             Button("Tools…", id="cfg-tools"),
             Button("Budget…", id="cfg-budget"),
             Button("Safety…", id="cfg-safety"),
@@ -2387,9 +2391,11 @@ class HalgateApp(App):
             f"{self.h.config.tui.chat_width_pct}%")
 
     def _nudge_chat_width(self, delta: int) -> None:
-        self.h.config.tui.chat_width_pct = max(
-            20, min(80, self.h.config.tui.chat_width_pct + delta))
+        current = self.h.config.tui.chat_width_pct
+        self.h.config.tui.chat_width_pct = max(20, min(80, current + delta))
         self._apply_chat_width()
+        if self.h.config.tui.chat_width_pct != current:
+            self.h.checkpoint()
 
     def action_shrink_chat(self) -> None:
         self._nudge_chat_width(-4)
@@ -2840,6 +2846,7 @@ class HalgateApp(App):
             self.h.audit.tool_result("tool_selection", {
                 "enabled": enabled, "total": len(choices),
             }, 0, engagement_id=engagement.id)
+            self.h.checkpoint()
             self.notify(f"Saved {enabled}/{len(choices)} tools for {engagement.label}.")
 
         self.push_screen(ToolsModal(engagement, self.h.registry.tool_details()), saved)
@@ -2865,20 +2872,42 @@ class HalgateApp(App):
             "limits": engagement.budget_overrides,
         }, 0,
                                  engagement_id=engagement.id)
+        # Settings are operator decisions; make the Save action durable now
+        # rather than relying on the periodic tool-action checkpoint.
+        self.h.checkpoint()
         self.notify("Budgets disabled for this engagement." if engagement.budgets_disabled
                     else "Custom budget saved.")
 
     def _open_safety(self) -> None:
-        self.push_screen(SafetyModal(), self._save_safety)
-
-    def _save_safety(self, values: dict[str, bool] | None) -> None:
-        if values is None:
+        engagement = self._selected_engagement()
+        if engagement is None:
             return
         safety = self.h.config.safety
-        safety.dry_run = values["dry_run"]
-        safety.prompt_injection.warn_patterns = values["warn_patterns"]
-        safety.prompt_injection.require_confirmation_for_actionable_untrusted_content = (
-            values["untrusted_confirmation"])
+        injection = safety.prompt_injection
+        values = {
+            "dry_run": engagement.safety_overrides.get("dry_run", safety.dry_run),
+            "warn_patterns": engagement.safety_overrides.get(
+                "warn_patterns", injection.warn_patterns),
+            "untrusted_confirmation": engagement.safety_overrides.get(
+                "untrusted_confirmation",
+                injection.require_confirmation_for_actionable_untrusted_content),
+        }
+        self.push_screen(
+            SafetyModal(values),
+            lambda result: self._save_safety(engagement, result),
+        )
+
+    def _save_safety(self, engagement, values: dict[str, bool] | None) -> None:
+        if values is None:
+            return
+        engagement.safety_overrides = dict(values)
+        self.h.audit.tool_call("safety_settings", {
+            "engagement_id": engagement.id,
+            **values,
+        }, engagement.id)
+        self.h.audit.tool_result("safety_settings", values, 0,
+                                 engagement_id=engagement.id)
+        self.h.checkpoint()
         self.notify("Safety settings saved.")
 
     def _open_audit_evidence(self) -> None:
@@ -2889,6 +2918,7 @@ class HalgateApp(App):
             return
         self.h.config.audit.forensic_enabled = bool(values["forensics"])
         self.h.config.evidence.retention_days = int(values["retention"])
+        self.h.checkpoint()
         self.notify("Audit and evidence settings saved.")
 
     def _reset_auto_approvals(self) -> None:

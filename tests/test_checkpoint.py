@@ -40,6 +40,27 @@ def test_roundtrip(tmp_path):
     assert restored.llm_id == "llama-local"
 
 
+def test_roundtrip_preserves_settings_overrides(tmp_path):
+    cp = SessionCheckpoint(str(tmp_path / "sessions"), "sess-settings")
+    engs = sample_engagements(tmp_path)
+    engs[0].safety_overrides = {
+        "dry_run": True,
+        "warn_patterns": False,
+        "untrusted_confirmation": True,
+    }
+    settings = {
+        "forensic_enabled": False,
+        "retention_days": 42,
+        "chat_width_pct": 70,
+    }
+    cp.save("sess-settings", "settings", [], [], engs, "llm", None,
+            session_settings=settings)
+
+    restored = SessionCheckpoint.load(str(tmp_path / "sessions"), "sess-settings")
+    assert restored.engagements[0].safety_overrides == engs[0].safety_overrides
+    assert restored.session_settings == settings
+
+
 def test_checkpoint_never_stores_raw_secret(tmp_path):
     """Defensive: even if a caller passes secret-bearing messages, the
     transcript file is what it is given — the harness redacts before append.

@@ -160,6 +160,24 @@ async def test_dry_run_returns_plan(setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("global_dry_run", "override", "expected"), [
+    (False, True, True),
+    (True, False, False),
+])
+async def test_engagement_dry_run_override_takes_precedence(
+        setup, global_dry_run, override, expected):
+    setup["cfg"].safety.dry_run = global_dry_run
+    setup["eng"].safety_overrides["dry_run"] = override
+    tc = ToolCall(id="1", name="shell",
+                  arguments={"command": "echo hi", "engagement_id": "eng1"})
+    results = await dispatch_parallel(
+        [tc], setup["executor"], setup["gate"], setup["audit"], setup["cfg"],
+        auto_approve, setup["redactor"])
+    assert results[0].get("dry_run", False) is expected
+    assert bool(setup["executor"].calls) is not expected
+
+
+@pytest.mark.asyncio
 async def test_dry_run_releases_budget_reservation(setup):
     gate = setup["gate"]
     eng = setup["eng"]

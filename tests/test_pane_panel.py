@@ -122,6 +122,54 @@ def test_new_text_selection_is_copied_once() -> None:
     app._copy_text.assert_called_once_with("selected response")
 
 
+def test_save_safety_uses_engagement_override_not_global_config() -> None:
+    engagement = Engagement("eng-01", "Target", "127.0.0.1", "read-only")
+    safety = SimpleNamespace(
+        dry_run=False,
+        prompt_injection=SimpleNamespace(
+            warn_patterns=True,
+            require_confirmation_for_actionable_untrusted_content=True,
+        ),
+    )
+    audit = MagicMock()
+    checkpoint = MagicMock()
+    app = SimpleNamespace(
+        h=SimpleNamespace(config=SimpleNamespace(safety=safety), audit=audit,
+                          checkpoint=checkpoint),
+        notify=MagicMock(),
+    )
+    values = {
+        "dry_run": True,
+        "warn_patterns": False,
+        "untrusted_confirmation": False,
+    }
+
+    HalgateApp._save_safety(app, engagement, values)
+
+    assert engagement.safety_overrides == values
+    assert safety.dry_run is False
+    assert safety.prompt_injection.warn_patterns is True
+    assert safety.prompt_injection.require_confirmation_for_actionable_untrusted_content is True
+    checkpoint.assert_called_once_with()
+
+
+def test_save_budget_disablement_updates_engagement_and_checkpoints() -> None:
+    engagement = Engagement("eng-01", "Target", "127.0.0.1", "read-only")
+    budgets = MagicMock()
+    audit = MagicMock()
+    checkpoint = MagicMock()
+    app = SimpleNamespace(
+        h=SimpleNamespace(budgets=budgets, audit=audit, checkpoint=checkpoint),
+        notify=MagicMock(),
+    )
+
+    HalgateApp._save_budget(app, engagement, {"disabled": True, "limits": {}})
+
+    assert engagement.budgets_disabled is True
+    budgets.update_limits.assert_called_once_with(engagement)
+    checkpoint.assert_called_once_with()
+
+
 def test_empty_text_selection_is_not_copied() -> None:
     app = SimpleNamespace(
         screen=MagicMock(),
@@ -532,6 +580,7 @@ def _halgate_stub(chat_width_pct: int) -> SimpleNamespace:
         registry=SimpleNamespace(ctx=SimpleNamespace(extra={})),
         process_mgr=SimpleNamespace(
             list=lambda: [], drain_output=lambda pane_id: ""),
+        checkpoint=MagicMock(),
         lifetime_tokens=SimpleNamespace(status_line=lambda: ""))
 
 
@@ -562,19 +611,23 @@ async def test_chat_width_nudges_step_and_clamp_at_bounds() -> None:
 
         app.action_grow_chat()
         assert halgate.config.tui.chat_width_pct == 79
+        halgate.checkpoint.assert_called_once_with()
         width = app.query_one("#chat-panel").styles.width
         assert (width.value, width.unit) == (79.0, Unit.WIDTH)
 
         app.action_shrink_chat()
         assert halgate.config.tui.chat_width_pct == 75
+        assert halgate.checkpoint.call_count == 2
 
         halgate.config.tui.chat_width_pct = 80
         app.action_grow_chat()
         assert halgate.config.tui.chat_width_pct == 80
+        assert halgate.checkpoint.call_count == 2
 
         halgate.config.tui.chat_width_pct = 20
         app.action_shrink_chat()
         assert halgate.config.tui.chat_width_pct == 20
+        assert halgate.checkpoint.call_count == 2
 
 
 @pytest.mark.asyncio

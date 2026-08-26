@@ -170,6 +170,14 @@ def main() -> int:
                 print(f"ERROR: {e}", file=sys.stderr)
                 return 1
     engagements = list(restored.engagements) if restored else _parse_engagements(args, config)
+    if restored:
+        settings = restored.session_settings
+        if "forensic_enabled" in settings:
+            config.audit.forensic_enabled = bool(settings["forensic_enabled"])
+        if "retention_days" in settings:
+            config.evidence.retention_days = int(settings["retention_days"])
+        if "chat_width_pct" in settings:
+            config.tui.chat_width_pct = int(settings["chat_width_pct"])
     h = Halgate(config, engagements,
                 session_id=restored.session_id if restored else None,
                 instance_id=instance_id(), resumed=bool(restored))
