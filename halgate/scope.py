@@ -675,7 +675,11 @@ class ScopeGate:
                     return False, "missing upload path", engagement
                 if not engagement.scratch_dir:
                     return False, "multipart uploads require an engagement scratch directory", engagement
-                ok, reason = path_within(engagement.scratch_dir, str(path))
+                candidate = Path(str(path))
+                if not candidate.is_absolute():
+                    candidate = Path(engagement.scratch_dir) / candidate
+                args["path"] = str(candidate)
+                ok, reason = path_within(engagement.scratch_dir, str(candidate))
             if ok and tool_name == "http" and args.get("save_as") is not None:
                 save_as = args.get("save_as")
                 if not isinstance(save_as, str) or not save_as:
@@ -752,7 +756,7 @@ class ScopeGate:
                         args["path"] = ref
                     else:
                         continue
-                if tool_name in {"read_file", "glob"}:
+                if tool_name in {"read_file", "write_file", "glob", "grep"}:
                     # File tools treat relative paths as scratch-relative,
                     # never relative to Halgate's process working directory.
                     # Normalize the dispatched arguments so their handlers

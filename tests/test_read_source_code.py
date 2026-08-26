@@ -4,6 +4,7 @@ import pytest
 
 from halgate.scope import Engagement, ScopeGate
 from halgate.tools.glob import handle_glob
+from halgate.tools.grep import handle_grep
 from halgate.tools.read_file import handle_read_file
 from halgate.tools.read_source_code import handle_read_source_code
 
@@ -40,24 +41,28 @@ def test_scope_accepts_relative_source_paths_only_in_scratch(packages, tmp_path)
     assert ok, reason
 
 
-def test_scope_normalizes_relative_read_and_glob_paths_to_scratch(packages, tmp_path):
+def test_scope_normalizes_relative_file_paths_to_scratch(packages, tmp_path):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     ctx = _ctx(packages, scratch)
 
     read_args = {"path": "notes.txt"}
     glob_args = {"pattern": "*.txt", "path": "reports"}
+    grep_args = {"pattern": "note", "path": "notes.txt"}
     read_ok, read_reason, _ = ctx.gate.authorize("read_file", read_args, "eng-source")
     glob_ok, glob_reason, _ = ctx.gate.authorize("glob", glob_args, "eng-source")
+    grep_ok, grep_reason, _ = ctx.gate.authorize("grep", grep_args, "eng-source")
 
     assert read_ok, read_reason
     assert glob_ok, glob_reason
+    assert grep_ok, grep_reason
     assert read_args["path"] == str(scratch / "notes.txt")
     assert glob_args["path"] == str(scratch / "reports")
+    assert grep_args["path"] == str(scratch / "notes.txt")
 
 
 @pytest.mark.asyncio
-async def test_relative_read_and_glob_use_scratch_directory(packages, tmp_path):
+async def test_relative_file_tools_use_scratch_directory(packages, tmp_path):
     scratch = tmp_path / "scratch"
     reports = scratch / "reports"
     reports.mkdir(parents=True)
@@ -67,10 +72,12 @@ async def test_relative_read_and_glob_use_scratch_directory(packages, tmp_path):
 
     read = await handle_read_file(ctx, "notes.txt", "eng-source")
     found = await handle_glob(ctx, "*.txt", "eng-source", path="reports")
+    grep = await handle_grep(ctx, "scratch-only", "notes.txt", "eng-source")
 
     assert read["content"] == "scratch-only"
     assert read["path"] == str(scratch / "notes.txt")
     assert found["files"] == [str(reports / "report.txt")]
+    assert grep["count"] == 1
 
 
 @pytest.mark.asyncio

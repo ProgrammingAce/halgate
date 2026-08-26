@@ -44,6 +44,16 @@ def generate_recovery_phrase() -> str:
     return " ".join(secrets.choice(_WORDS) for _ in range(24))
 
 
+def is_unlocked(key_file: str | Path) -> bool:
+    """Whether this process has already unlocked ``key_file``."""
+    return Path(key_file).expanduser().resolve() in NativeCrypto._cache
+
+
+def unlock(key_file: str | Path, phrase: str) -> None:
+    """Unlock a native key without reading from the terminal."""
+    NativeCrypto(key_file, phrase_provider=lambda: phrase)._root_key()
+
+
 class NativeCrypto:
     _cache: dict[Path, bytes] = {}
 

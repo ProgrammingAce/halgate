@@ -137,6 +137,21 @@ def test_network_engagement_can_use_only_its_private_scratch(tmp_path, packages)
     assert ok, reason
 
 
+def test_write_file_relative_path_is_normalized_to_private_scratch(tmp_path, packages):
+    _, engs = make_engagements(tmp_path, packages)
+    scratch = tmp_path / "scratch" / "eng-02"
+    scratch.mkdir(parents=True)
+    engs[1].scratch_dir = str(scratch)
+    engs[1].tool_overrides["write_file"] = True
+    gate = ScopeGate(engs, packages, {})
+    args = {"path": "secret.txt"}
+
+    ok, reason, _ = gate.authorize("write_file", args, "eng-02")
+
+    assert ok, reason
+    assert args["path"] == str(scratch / "secret.txt")
+
+
 def test_glob_without_path_requires_private_scratch(tmp_path, packages):
     root, engagements = make_engagements(tmp_path, packages)
     gate = ScopeGate(engagements, packages, {})

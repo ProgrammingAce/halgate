@@ -13,7 +13,9 @@ MAX_FILES_SCANNED = 1_000
 
 GREP_SCHEMA = {
     "name": "grep",
-    "description": "Search file contents using a regular expression. "
+    "description": "Search file contents using a regular expression. Relative "
+                   "paths are resolved inside the engagement's private scratch "
+                   "directory. "
                    "Returns up to 100 matching lines with file and line number; "
                    "files of 5 MiB or more are skipped.",
     "parameters": {
@@ -22,7 +24,7 @@ GREP_SCHEMA = {
             "pattern": {"type": "string",
                         "description": "Regex pattern to search for"},
             "path": {"type": "string",
-                     "description": "File or directory to search in"},
+                     "description": "File or directory to search in; relative paths are relative to the engagement scratch directory"},
             "include": {"type": "string",
                         "description": "Glob filter for filenames (e.g. '*.py')"},
             "engagement_id": {"type": "string",
@@ -41,7 +43,18 @@ async def handle_grep(ctx: ToolContext, pattern: str, path: str,
     except re.error as e:
         return {"error": f"invalid regex: {e}"}
 
+    try:
+        engagement = ctx.gate._require_active(engagement_id)
+    except Exception as e:
+        return {"error": str(e)}
     p = Path(path)
+    if not p.is_absolute():
+        if not engagement.scratch_dir:
+            return {"error": "grep requires an engagement scratch directory for relative paths"}
+        p = Path(engagement.scratch_dir) / p
+    allowed, reason = ctx.gate.check_path(str(p), engagement)
+    if not allowed:
+        return {"error": reason}
     if p.is_file():
         candidates = iter((p,))
     elif p.is_dir():

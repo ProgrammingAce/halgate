@@ -8,7 +8,7 @@ from .context import ToolContext
 
 WRITE_FILE_SCHEMA = {
     "name": "write_file",
-    "description": "Write content to an engagement-authorized file. Creates parent directories if needed and overwrites existing files; requires operator approval.",
+    "description": "Write content to an engagement-authorized file. Relative paths are resolved inside the engagement's private scratch directory. Creates parent directories if needed and overwrites existing files; requires operator approval.",
     "parameters": {
         "type": "object",
         "properties": {

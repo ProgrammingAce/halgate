@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 import re
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from .budget import BudgetManager
 from .config import Config
@@ -29,6 +29,8 @@ from .scope import Engagement, ScopeGate
 from .sessions.checkpoint import SessionCheckpoint
 from .tracker import ContextTracker, LifetimeTokenCounter
 from .tools.registry import ToolRegistry
+from .crypto import is_unlocked, unlock
+from .errors import ForensicEncryptionError
 
 
 class Halgate:
@@ -36,7 +38,8 @@ class Halgate:
     _COMPACTION_SUMMARY_TOKENS = 700
     def __init__(self, config: Config, engagements: list[Engagement],
                  session_id: str | None = None,
-                 instance_id: str = "", resumed: bool = False):
+                 instance_id: str = "", resumed: bool = False,
+                 phrase_callback: Callable[[], Awaitable[str | None]] | None = None):
         self.config = config
         self.session_id = session_id or uuid.uuid4().hex[:12]
         self.engagements = engagements
@@ -70,7 +73,9 @@ class Halgate:
         self.context_builder = ToolContextBuilder()
         self._dirty = 0
         from .memory.keystore import KeyStore
-        self._keystore = KeyStore(config.audit, instance_id or "default")
+        self.phrase_callback = phrase_callback
+        self._keystore = KeyStore(
+            config.audit, instance_id or "default", phrase_callback)
         self._redactor = Redactor(self._keystore)
         # Credential-referencing tools (jwt_sign) resolve keys through the
         # same encrypted keystore the redactor stores into.
@@ -89,9 +94,23 @@ class Halgate:
             self.router.active_endpoint.id,
             resumed=resumed)
 
+    async def ensure_native_key(self) -> None:
+        """Let an interactive UI unlock the key before encryption is needed."""
+        key_file = self.config.audit.encryption_key_file
+        if (not Path(key_file).expanduser().exists() or is_unlocked(key_file)
+                or self.phrase_callback is None):
+            return
+        phrase = await self.phrase_callback()
+        if phrase is None:
+            raise ForensicEncryptionError(
+                "operator cancelled recovery phrase entry")
+        unlock(key_file, phrase)
+
     async def run(self, user_input: str) -> str:
         """One full turn: user input -> LLM -> tool dispatch -> repeat until stop.
         Returns the final assistant text."""
+        if self.config.audit.forensic_enabled:
+            await self.ensure_native_key()
         safe_input = await self._redactor.redact(user_input, "user_input", None)
         self.audit.user_input(safe_input, raw=user_input)
         # This is local session metadata, not an LLM message field. The

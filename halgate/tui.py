@@ -31,6 +31,7 @@ from textual.screen import ModalScreen
 
 from .halgate import Halgate
 from .dispatch import ApprovalResult, dispatch_parallel
+from .errors import EncryptionError, ForensicEncryptionError
 from .llm.client import ToolCall
 from .scope import extract_hostnames, extract_target_refs, extract_urls
 
@@ -1419,7 +1420,7 @@ class RecoveryPhraseModal(ModalScreen):
             Static(escape(self._phrase), id="recovery-phrase"),
             Button("Copy recovery phrase", id="recovery-copy"),
             Button("Back up encrypted key", id="recovery-backup"),
-            Checkbox("I stored this recovery phrase offline",
+            Checkbox("I have stored this recovery phrase offline",
                      id="recovery-confirm"),
             Button("Continue", variant="warning", id="recovery-dismiss",
                    disabled=True),
@@ -1456,6 +1457,44 @@ class RecoveryPhraseModal(ModalScreen):
             return
         self.app.notify(f"Encrypted key backup written to {destination}")
 
+
+class RecoveryPhraseEntryModal(ModalScreen):
+    """Collect an existing recovery phrase without reading the terminal."""
+
+    BINDINGS = [("escape", "dismiss", "Cancel")]
+    CSS = """
+    RecoveryPhraseEntryModal { align: center middle; background: transparent; }
+    RecoveryPhraseEntryModal #phrase-entry-content {
+        width: 76; max-width: 96%; height: auto; background: $surface;
+        border: tall $warning; padding: 1 2;
+    }
+    RecoveryPhraseEntryModal Button { width: 100%; }
+    """
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Static("[bold]Recovery phrase required[/bold]"),
+            Static("Needed to encrypt this session's forensic records."),
+            Input(placeholder="Halgate recovery phrase", password=True,
+                  id="phrase-entry-input"),
+            Button("Unlock", variant="warning", id="phrase-entry-unlock"),
+            Button("Cancel", id="phrase-entry-cancel"),
+            id="phrase-entry-content",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#phrase-entry-input", Input).focus()
+
+    def action_dismiss(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "phrase-entry-cancel":
+            self.dismiss(None)
+        elif event.button.id == "phrase-entry-unlock":
+            phrase = self.query_one("#phrase-entry-input", Input).value.strip()
+            if phrase:
+                self.dismiss(phrase)
 
 class KeyBackupModal(ModalScreen):
     """Choose a non-destructive destination for an encrypted key envelope."""
@@ -2283,6 +2322,36 @@ class HalgateApp(App):
         # last value so an ordinary click after selecting text does not keep
         # replacing the clipboard or producing duplicate notifications.
         self._last_auto_copied_selection: str | None = None
+        self.h.phrase_callback = self._ask_phrase
+        # Lightweight TUI stubs used by integrations need not implement the
+        # internal keystore; real Halgate instances always do.
+        if hasattr(self.h, "_keystore"):
+            self.h._keystore.unlock_provider = self._ask_phrase
+
+    async def _ask_phrase(self) -> str | None:
+        """Prompt and validate in the TUI, retrying invalid phrases in-place."""
+        from .crypto import unlock
+
+        while True:
+            future: asyncio.Future[str | None] = (
+                asyncio.get_running_loop().create_future())
+
+            def received(result: str | None) -> None:
+                if not future.done():
+                    future.set_result(result)
+
+            self.push_screen(RecoveryPhraseEntryModal(), received)
+            phrase = await future
+            if phrase is None:
+                return None
+            try:
+                # Validate here so the operator can correct a typo without
+                # losing the current turn. This also seeds the shared cache.
+                unlock(self.h.config.audit.encryption_key_file, phrase)
+                return phrase
+            except EncryptionError:
+                self.notify("Incorrect recovery phrase. Please try again.",
+                            severity="error")
 
     AUTO_FOCUS = "#chat-input"
 
@@ -3075,6 +3144,10 @@ class HalgateApp(App):
             self._chat.stop_thinking(completed=False)
             self._chat.add_agent("[yellow]Prompt cancelled. Completed results remain in the session.[/yellow]")
             raise
+        except ForensicEncryptionError:
+            self._chat.stop_thinking(completed=False)
+            self._chat.add_agent(
+                "[red]Turn aborted: recovery phrase required — resubmit to try again.[/red]")
         except Exception as e:
             self._chat.stop_thinking(completed=False)
             self._chat.add_agent(f"[red]ERROR: {e}[/red]")

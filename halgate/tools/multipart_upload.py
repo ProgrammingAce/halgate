@@ -13,7 +13,7 @@ from ..scope import path_within
 
 MULTIPART_UPLOAD_SCHEMA = {
     "name": "multipart_upload",
-    "description": "Upload one scratch-folder file to an approved in-scope HTTP endpoint using multipart/form-data. The file must be inside the active engagement's private scratch directory.",
+    "description": "Upload one scratch-folder file to an approved in-scope HTTP endpoint using multipart/form-data. Relative paths are resolved inside the active engagement's private scratch directory.",
     "parameters": {"type": "object", "properties": {
         "url": {"type": "string"}, "path": {"type": "string"},
         "field_name": {"type": "string", "description": "Multipart field name (default: file)"},
@@ -35,7 +35,10 @@ async def handle_multipart_upload(ctx: ToolContext, url: str, path: str,
         engagement = ctx.gate._require_active(engagement_id)
         if not engagement.scratch_dir:
             return {"error": "multipart uploads require an engagement scratch directory"}
-        allowed, reason = path_within(engagement.scratch_dir, path)
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            candidate = Path(engagement.scratch_dir) / candidate
+        allowed, reason = path_within(engagement.scratch_dir, str(candidate))
         if not allowed:
             return {"error": reason}
         if method.upper() not in {"POST", "PUT"}:
@@ -43,7 +46,7 @@ async def handle_multipart_upload(ctx: ToolContext, url: str, path: str,
         target = await _pinned_target(ctx, url, engagement)
         if isinstance(target, str):
             return {"error": target}
-        resolved_path = Path(path).resolve(strict=True)
+        resolved_path = candidate.resolve(strict=True)
         if not resolved_path.is_file():
             return {"error": "upload path must be a regular file"}
         if resolved_path.stat().st_size > 10 * 1024 * 1024:

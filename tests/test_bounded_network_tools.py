@@ -25,6 +25,23 @@ def test_websocket_scope_uses_its_http_equivalent(packages) -> None:
     assert ok, reason
 
 
+def test_multipart_relative_path_is_normalized_to_private_scratch(packages, tmp_path) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    engagement = Engagement("eng", "net", "192.168.1.0/24", "offensive",
+                            scratch_dir=str(scratch))
+    gate = ScopeGate([engagement], packages, {})
+    args = {"url": "https://192.168.1.9/upload", "path": "report.txt",
+            "method": "POST"}
+
+    ok, reason, _ = gate.authorize(
+        "multipart_upload", args, "eng",
+        resolver=lambda _host: [__import__("ipaddress").ip_address("192.168.1.9")])
+
+    assert ok, reason
+    assert args["path"] == str(scratch / "report.txt")
+
+
 @pytest.mark.asyncio
 async def test_multipart_rejects_paths_outside_private_scratch(packages, tmp_path) -> None:
     scratch = tmp_path / "scratch"

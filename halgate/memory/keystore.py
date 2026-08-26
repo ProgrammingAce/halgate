@@ -11,15 +11,17 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from typing import Awaitable, Callable
 from uuid import uuid4
 
 from ..config import AuditConfig
-from ..crypto import NativeCrypto
+from ..crypto import NativeCrypto, is_unlocked, unlock
 from ..errors import EncryptionError
 
 
 class KeyStore:
-    def __init__(self, cfg: AuditConfig, instance_id: str):
+    def __init__(self, cfg: AuditConfig, instance_id: str,
+                 unlock_provider: Callable[[], Awaitable[str | None]] | None = None):
         self._path = Path(cfg.dir) / "secrets" / f"keystore.{instance_id}.jsonl"
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Create with 0600 without relying on process umask.
@@ -37,9 +39,22 @@ class KeyStore:
         self._instance_id = instance_id
         self._ready = False
         self._lock = asyncio.Lock()
+        self.unlock_provider = unlock_provider
+
+    async def _ensure_unlocked(self) -> None:
+        """Use a UI provider before lazy crypto can fall back to getpass."""
+        key_file = self._cfg.encryption_key_file
+        if (is_unlocked(key_file) or not Path(key_file).expanduser().exists()
+                or self.unlock_provider is None):
+            return
+        phrase = await self.unlock_provider()
+        if phrase is None:
+            raise EncryptionError("operator cancelled recovery phrase entry")
+        unlock(key_file, phrase)
 
     async def verify(self) -> dict:
         """Confirm the native key can be unlocked. Returns no secret material."""
+        await self._ensure_unlocked()
         self._crypto_backend()._root_key()
         result = {"encryption_version": 1, "can_encrypt": True}
         self._ready = True
@@ -92,6 +107,8 @@ class KeyStore:
             return None
         if entry.get("encryption_version") != 1:
             raise EncryptionError("legacy OpenPGP credentials are unsupported")
+        async with self._lock:
+            await self._ensure_unlocked()
         raw = entry["ciphertext"].encode()
         plaintext = self._crypto_backend().decrypt_sync(
             raw, f"credential:{self._instance_id}:{short_id}")

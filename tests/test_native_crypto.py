@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from halgate.crypto import NativeCrypto
+from halgate.crypto import NativeCrypto, is_unlocked, unlock
 from halgate.errors import EncryptionError
 
 
@@ -42,3 +42,25 @@ def test_archive_and_replace_preserves_the_old_envelope(tmp_path):
     NativeCrypto._cache.clear()
     assert NativeCrypto(key_file, lambda: new_phrase)._root_key()
     assert NativeCrypto(archive, lambda: old_phrase)._root_key()
+
+
+def test_explicit_unlock_seeds_the_shared_cache(tmp_path, monkeypatch):
+    key_file = tmp_path / "key.json"
+    phrase = NativeCrypto.initialize(key_file)
+    NativeCrypto._cache.clear()
+
+    unlock(key_file, phrase)
+
+    monkeypatch.setattr("getpass.getpass", lambda _: pytest.fail("prompted"))
+    assert is_unlocked(key_file)
+    assert NativeCrypto(key_file).encrypt_sync(b"secret", "test")
+
+
+def test_explicit_unlock_rejects_wrong_phrase_without_caching(tmp_path):
+    key_file = tmp_path / "key.json"
+    NativeCrypto.initialize(key_file)
+    NativeCrypto._cache.clear()
+
+    with pytest.raises(EncryptionError):
+        unlock(key_file, "wrong phrase")
+    assert not is_unlocked(key_file)
