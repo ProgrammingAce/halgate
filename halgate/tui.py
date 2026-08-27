@@ -2153,10 +2153,11 @@ class ConfigModal(ModalScreen):
         if e.button.id == "cfg-cancel":
             self.dismiss()
         elif e.button.id == "cfg-tools":
-            # Dismiss before opening the next modal so focus and Escape return
-            # cleanly to the main screen.
-            self.dismiss()
-            self.app.call_after_refresh(self.app._open_tools)
+            # Keep this screen on the stack while a child settings modal is
+            # open.  Dismissing first and queuing the next modal loses that
+            # modal's result callback, so its Save action never reaches the
+            # application.
+            self.app._open_tools()
         elif e.button.id in {"cfg-budget", "cfg-safety", "cfg-audit", "cfg-reset"}:
             action = {
                 "cfg-budget": self.app._open_budget,
@@ -2164,8 +2165,7 @@ class ConfigModal(ModalScreen):
                 "cfg-audit": self.app._open_audit_evidence,
                 "cfg-reset": self.app._reset_auto_approvals,
             }[e.button.id]
-            self.dismiss()
-            self.app.call_after_refresh(action)
+            action()
 
 
 class HalgateApp(App):
@@ -2860,7 +2860,7 @@ class HalgateApp(App):
             }, engagement.id)
             self.h.audit.tool_result("tool_selection", {
                 "enabled": enabled, "total": len(choices),
-            }, 0, engagement_id=engagement.id)
+            }, 0, truncated=False, engagement_id=engagement.id)
             self.h.checkpoint()
             self.notify(f"Saved {enabled}/{len(choices)} tools for {engagement.label}.")
 
@@ -2885,7 +2885,7 @@ class HalgateApp(App):
         self.h.audit.tool_result("budget_settings", {
             "disabled": engagement.budgets_disabled,
             "limits": engagement.budget_overrides,
-        }, 0,
+        }, 0, truncated=False,
                                  engagement_id=engagement.id)
         # Settings are operator decisions; make the Save action durable now
         # rather than relying on the periodic tool-action checkpoint.
@@ -2920,7 +2920,7 @@ class HalgateApp(App):
             "engagement_id": engagement.id,
             **values,
         }, engagement.id)
-        self.h.audit.tool_result("safety_settings", values, 0,
+        self.h.audit.tool_result("safety_settings", values, 0, truncated=False,
                                  engagement_id=engagement.id)
         self.h.checkpoint()
         self.notify("Safety settings saved.")

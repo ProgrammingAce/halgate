@@ -15,8 +15,10 @@ from textual.strip import Strip
 from textual.widgets import Button, Checkbox, Input, RichLog, Select
 from rich.segment import Segment
 
+from halgate.config import BudgetLimits
 from halgate.scope import Engagement
 from halgate.tui import (
+    BudgetModal,
     ChatInput,
     ConfigModal,
     ChatPanel,
@@ -168,6 +170,48 @@ def test_save_budget_disablement_updates_engagement_and_checkpoints() -> None:
     assert engagement.budgets_disabled is True
     budgets.update_limits.assert_called_once_with(engagement)
     checkpoint.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_budget_save_from_settings_keeps_disablement_on_reopen() -> None:
+    """A child modal must retain its callback after Settings opens it."""
+    engagement = Engagement("eng-01", "Target", "127.0.0.1", "read-only")
+
+    class Gate:
+        def active_engagements(self):
+            return [engagement]
+
+    halgate = _halgate_stub(62)
+    halgate.engagements = [engagement]
+    halgate.gate = Gate()
+    halgate.router.active_endpoint = SimpleNamespace(
+        id="remote-coder", base_url="https://api.example", model="model",
+        api_key="key", temperature=0.2, max_tokens=4096)
+    halgate.budgets = MagicMock()
+    halgate.budgets.limits.return_value = BudgetLimits()
+    halgate.audit = MagicMock()
+    app = HalgateApp(halgate)
+
+    async with app.run_test(size=(120, 40)) as pilot:
+        await pilot.pause()
+        app._open_config()
+        await pilot.pause()
+        app.screen.query_one("#cfg-budget", Button).press()
+        await pilot.pause(0.1)
+        assert isinstance(app.screen, BudgetModal)
+
+        app.screen.query_one("#budget-disabled", Checkbox).toggle()
+        app.screen.query_one("#budget-save", Button).press()
+        await pilot.pause(0.1)
+        assert engagement.budgets_disabled is True
+        halgate.audit.tool_result.assert_called_once_with(
+            "budget_settings", {"disabled": True, "limits": {}}, 0,
+            truncated=False, engagement_id=engagement.id)
+        assert isinstance(app.screen, ConfigModal)
+
+        app.screen.query_one("#cfg-budget", Button).press()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#budget-disabled", Checkbox).value is True
 
 
 def test_empty_text_selection_is_not_copied() -> None:
