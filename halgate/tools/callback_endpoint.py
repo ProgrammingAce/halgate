@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ipaddress
 import json
 import re
+import socket
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -55,7 +57,10 @@ REQUEST_CALLBACK_ENDPOINT_SCHEMA = {
                          "use the returned dns_usage instructions exactly.")},
         "bind": {"type": "string", "enum": ["127.0.0.1", "0.0.0.0"],
                  "description": "Listener interface (default 127.0.0.1). "
-                                "0.0.0.0 is reachable on external interfaces"},
+                                "0.0.0.0 is reachable on external interfaces. "
+                                "The harness derives a candidate advertised host "
+                                "from the route to this engagement and shows it in "
+                                "the mandatory approval prompt."},
         "port": {"type": "integer",
                  "description": "Fixed listener port 1-65535, or 0 to auto-assign "
                                 "(default 0). DNS normally needs port 53; an "
@@ -443,10 +448,18 @@ async def handle_request_callback_endpoint(ctx: ToolContext, reason: str,
         return {"error": ("DNS callbacks from a remote target require "
                           "bind='0.0.0.0'; 127.0.0.1 is reachable only from "
                           "the harness host")}
-    advertised_host = _advertised_host(ctx)
+    configured_host = _advertised_host(ctx)
+    inferred_host = infer_callback_advertised_host(engagement)
+    advertised_host = configured_host or inferred_host
+    approved_host = _.get("_callback_approved_advertised_host")
+    if (bind == "0.0.0.0" and approved_host is not None
+            and str(approved_host) != str(advertised_host)):
+        return {"error": ("callback route changed after approval; request a new "
+                          "listener so the operator can review the current address")}
     if bind == "0.0.0.0" and not advertised_host:
-        return {"error": ("externally reachable callbacks require "
-                          "callback.advertised_host to be configured by the operator")}
+        return {"error": ("could not determine a non-loopback local address "
+                          "for this engagement's route; configure "
+                          "callback.advertised_host explicitly")}
     try:
         port = int(port)
         max_requests = int(max_requests)
@@ -480,6 +493,8 @@ async def handle_request_callback_endpoint(ctx: ToolContext, reason: str,
         "protocol": protocol,
         "bind": bind,
         "advertised_host": advertised_host if bind == "0.0.0.0" else None,
+        "advertised_host_source": ("configured" if configured_host else "route-inferred")
+        if bind == "0.0.0.0" else None,
         "port": None,
         "url": None,
         "url_display": None,
@@ -530,6 +545,7 @@ async def handle_request_callback_endpoint(ctx: ToolContext, reason: str,
         "protocol": protocol,
         "bind": bind,
         "advertised_host": entry["advertised_host"],
+        "advertised_host_source": entry["advertised_host_source"],
         "port": actual_port,
         "max_requests": max_requests,
         "path_prefix": path_prefix,
@@ -551,6 +567,36 @@ def _advertised_host(ctx: ToolContext) -> str | None:
     callback = getattr(config, "callback", None)
     host = getattr(callback, "advertised_host", None)
     return str(host) if host else None
+
+
+def infer_callback_advertised_host(engagement: Any) -> str | None:
+    """Return the IPv4 source address the OS would route to this engagement.
+
+    UDP ``connect`` only selects a route locally; it sends no datagram.  The
+    result is intentionally a proposal shown in the existing listener approval
+    dialog, never a durable config mutation.  CIDR engagements use their first
+    usable address solely to select the interface, not as a probe target.
+    """
+    target = str(getattr(engagement, "target", ""))
+    try:
+        network = ipaddress.ip_network(target, strict=False)
+        if network.version != 4:
+            return None
+        destination = str(network.network_address if network.prefixlen == 32
+                          else network.network_address + 1)
+    except ValueError:
+        destination = target
+    if not destination or destination.startswith("/"):
+        return None
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect((destination, 9))
+            address = ipaddress.ip_address(probe.getsockname()[0])
+    except OSError:
+        return None
+    if address.is_loopback or address.is_unspecified or address.is_link_local:
+        return None
+    return str(address)
 
 
 def _url_host(host: str) -> str:

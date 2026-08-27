@@ -718,6 +718,13 @@ class ScopeGate:
                 netloc = f"{host}:{port}"
             ok, reason = self.check_url(f"http://{netloc}", engagement, resolver)
             return ok, reason, engagement
+        if tool_name in {"mdns_browse", "packet_capture"}:
+            # These tools observe the local LAN, not an arbitrary remote
+            # destination. They are meaningful only for a network-scoped
+            # engagement; package policy and the approval gate remain in force.
+            if engagement.is_path_target:
+                return False, f"{tool_name} requires a network-scoped engagement", engagement
+            return True, "", engagement
         if tool_name == "scan":
             targets = args.get("targets") or []
             if isinstance(targets, str):

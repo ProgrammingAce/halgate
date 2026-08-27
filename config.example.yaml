@@ -19,7 +19,11 @@ audit:
   forensic_enabled: false
   encryption_key_file: ".halgate_audit/native-key.json"
 
-# Set only when an authorized target must reach a callback listener.
+# Optional override for an authorized target-reachable callback listener. By
+# default, each externally bound listener proposes the source IP selected by
+# the OS route to its engagement and asks the operator to approve it. Set this
+# only to override that result or when route discovery is unavailable.
+# Example: callback: { advertised_host: "192.168.4.67" }
 callback: {}
 
 # TUI layout: width of the left chat pane, in percent (clamped to 20-80).

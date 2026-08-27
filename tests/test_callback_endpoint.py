@@ -248,11 +248,27 @@ async def test_dns_rejects_loopback_for_remote_callback(packages) -> None:
 
 
 @pytest.mark.asyncio
-async def test_external_callback_requires_operator_advertised_host(packages) -> None:
+async def test_external_callback_requires_explicit_host_when_route_is_unavailable(packages,
+                                                                                   monkeypatch) -> None:
     ctx = make_ctx(packages)
+    monkeypatch.setattr("halgate.tools.callback_endpoint.infer_callback_advertised_host",
+                        lambda _engagement: None)
     res = await handle_request_callback_endpoint(
         ctx, "external confirmation", "http", "eng-a", bind="0.0.0.0")
     assert "error" in res and "callback.advertised_host" in res["error"]
+
+
+@pytest.mark.asyncio
+async def test_external_callback_uses_route_inferred_host(packages, listener_capability,
+                                                          monkeypatch) -> None:
+    ctx = make_ctx(packages)
+    monkeypatch.setattr("halgate.tools.callback_endpoint.infer_callback_advertised_host",
+                        lambda _engagement: "198.51.100.20")
+    res = await handle_request_callback_endpoint(
+        ctx, "external confirmation", "http", "eng-a", bind="0.0.0.0")
+    assert res["advertised_host"] == "198.51.100.20"
+    assert res["advertised_host_source"] == "route-inferred"
+    await handle_read_callback_endpoint(ctx, res["endpoint_id"], "eng-a", close=True)
 
 
 @pytest.mark.asyncio

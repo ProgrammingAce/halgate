@@ -27,6 +27,29 @@ cp config.example.yaml config.yaml
 
 Update `config.yaml` with your local LLM endpoint.
 
+### LAN observation and callbacks
+
+For an authorized network engagement, Halgate exposes first-class tools for
+bounded mDNS/DNS-SD discovery and short, protocol-filtered `tcpdump` captures.
+Both require per-call approval; PCAP files are snaplen- and packet-limited and
+are written only to that engagement's private scratch directory. Packet capture
+also requires a locally installed `tcpdump` with permission to capture on the
+selected interface.
+
+The callback listener is already a first-class approval-gated tool. For an
+external bind it derives the local source address for the engagement route and
+shows that candidate in the approval prompt. To override that derivation (or
+when no route can be derived), set an operator-confirmed, stable address in
+your uncommitted `config.yaml`:
+
+```yaml
+callback:
+  advertised_host: "192.168.4.67"
+```
+
+The explicit setting is used when automatic route discovery is unavailable or
+when the operator needs to override its result.
+
 To encrypt credentials or forensic payloads, the harness will ask you to create
 a key and store the displayed recovery phrase offline:
 

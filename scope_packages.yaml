@@ -23,6 +23,8 @@ packages:
       # requesting engagement, for narrowly scoped confirmations only.
       request_callback_endpoint: true
       read_callback_endpoint: true
+      mdns_browse: true
+      packet_capture: true
       # Empty permits a command to reach the mandatory operator-approval
       # prompt.  Hard destructive/privilege/interpreter blocks still apply.
       shell_allowlist: []
@@ -78,6 +80,8 @@ packages:
       binary_inspect: true
       request_callback_endpoint: true
       read_callback_endpoint: true
+      mdns_browse: true
+      packet_capture: true
       # See offensive: user approval, scope validation, and hard blocks are
       # the policy boundary rather than a brittle binary catalog.
       shell_allowlist: []
@@ -121,6 +125,8 @@ packages:
       binary_inspect: true
       request_callback_endpoint: false
       read_callback_endpoint: false
+      mdns_browse: false
+      packet_capture: false
       scan: false
       process: false
       memory: true

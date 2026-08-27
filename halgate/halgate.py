@@ -411,6 +411,12 @@ class Halgate:
             "Use `tcp_probe` only to identify one in-scope TCP/TLS service when "
             "HTTP is unsuitable. It cannot send application payloads.")
         parts.append(
+            "For authorized local-LAN observation, use `mdns_browse` to query "
+            "DNS-SD advertisements without connecting to services, or "
+            "`packet_capture` for a short, built-in mDNS/DNS/DHCP/TCP-SYN "
+            "tcpdump filter. Both require operator approval; packet captures "
+            "are bounded and stored only in engagement scratch.")
+        parts.append(
             "When speaking to the operator, refer to an engagement by its label, "
             "not its internal engagement_id; use the ID only inside tool calls.")
         parts.append(

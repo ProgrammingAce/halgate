@@ -15,6 +15,8 @@ from . import http_session as _http_session
 from . import data as _data
 from . import tcp_probe as _tcp_probe
 from . import callback_endpoint as _callback_endpoint
+from . import mdns as _mdns
+from . import packet_capture as _packet_capture
 from . import http_replay as _http_replay
 from . import multipart_upload as _multipart_upload
 from . import binary_inspect as _binary_inspect
@@ -125,6 +127,10 @@ class ToolRegistry:
         self._register("read_callback_endpoint",
                        _callback_endpoint.handle_read_callback_endpoint,
                        _callback_endpoint.READ_CALLBACK_ENDPOINT_SCHEMA)
+        self._register("mdns_browse", _mdns.handle_mdns_browse,
+                       _mdns.MDNS_BROWSE_SCHEMA)
+        self._register("packet_capture", _packet_capture.handle_packet_capture,
+                       _packet_capture.PACKET_CAPTURE_SCHEMA)
         self._register("scan", _scan.handle_scan, _scan.SCAN_SCHEMA)
         self._register("pane_spawn", _panes.handle_pane_spawn,
                        _panes.PANE_SPAWN_SCHEMA)

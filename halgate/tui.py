@@ -248,6 +248,11 @@ def _approval_requirement_reason(call: ToolCall) -> str:
                                       "that accepts inbound HTTP, TCP, or DNS callbacks; the "
                                       "listener is bound to this engagement "
                                       "and expires automatically."),
+        "mdns_browse": ("It sends a multicast DNS-SD query on the local LAN and "
+                        "records the bounded set of advertised services it receives."),
+        "packet_capture": ("It starts a short, filtered tcpdump capture on the "
+                           "selected local interface and saves a bounded PCAP in "
+                           "this engagement's private scratch directory."),
         "jwt_sign": ("It mints an HS256 or explicitly scope-enabled unsigned "
                      "authentication token, bound to this engagement's declared "
                      "claim set and lifetime. HS256 uses a referenced keystore "
@@ -965,7 +970,8 @@ class ToolsModal(ModalScreen):
         ("files", "Files", {"read_file", "read_source_code", "write_file", "glob", "grep"}),
         ("network", "Network", {"http", "http_replay", "http_session", "auth_session",
                                    "multipart_upload", "websocket", "tcp_probe", "scan",
-                                   "request_callback_endpoint", "read_callback_endpoint"}),
+                                   "request_callback_endpoint", "read_callback_endpoint",
+                                   "mdns_browse", "packet_capture"}),
         ("jwt", "JWT", {"jwt_sign", "jwt_inspect"}),
         ("memory", "Memory", {"memory_remember", "memory_recall", "memory_forget",
                                  "memory_edit", "memory_pin", "memory_unpin"}),
@@ -1654,6 +1660,8 @@ class ApprovalModal(ModalScreen):
         self._exact_target = exact_target
 
     def compose(self) -> ComposeResult:
+        callback_host = self._call.arguments.get("_callback_approved_advertised_host")
+        callback_source = self._call.arguments.get("_callback_advertised_host_source")
         detail = (self._call.arguments.get("command")
                   or self._call.arguments.get("url")
                   or json.dumps(self._call.arguments, default=str))
@@ -1673,6 +1681,13 @@ class ApprovalModal(ModalScreen):
             Static("[yellow]Why approval is required:[/yellow] "
                    + _approval_requirement_reason(self._call),
                    id="approval-reason"),
+            Static(("[yellow]Callback address to advertise:[/yellow] "
+                    f"{callback_host} ({callback_source}; verify it is reachable)"
+                    if callback_host else "[yellow]Route-derived callback address:[/yellow] "
+                    "unavailable — configure callback.advertised_host")
+                   if self._call.name == "request_callback_endpoint"
+                   and self._call.arguments.get("bind", "127.0.0.1") == "0.0.0.0"
+                   else ""),
             ScrollableContainer(Static(str(detail)), id="approval-command"),
             Static("", id="approval-summary"),
             Horizontal(*buttons),

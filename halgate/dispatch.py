@@ -21,6 +21,8 @@ BUDGET_KIND_BY_TOOL: dict[str, str] = {
     "websocket": "max_requests",
     "tcp_probe": "max_requests",
     "scan": "max_scan_targets",
+    "mdns_browse": "max_requests",
+    "packet_capture": "max_requests",
 }
 _DEFAULT_BUDGET_KIND = "max_actions"
 
@@ -99,6 +101,19 @@ async def dispatch_parallel(
             if not allowed:
                 audit.guard_decision(tc.name, False, reason)
                 return {"error": reason}
+
+            # Make the route-derived address visible in the *existing*
+            # mandatory approval prompt before an external listener is
+            # provisioned. It is recomputed by the handler after approval and
+            # is never accepted as model-controlled configuration.
+            if (tc.name == "request_callback_endpoint"
+                    and tc.arguments.get("bind", "127.0.0.1") == "0.0.0.0"):
+                from .tools.callback_endpoint import infer_callback_advertised_host
+                configured_host = config.callback.advertised_host
+                tc.arguments["_callback_approved_advertised_host"] = (
+                    configured_host or infer_callback_advertised_host(engagement))
+                tc.arguments["_callback_advertised_host_source"] = (
+                    "configured" if configured_host else "route-inferred")
 
             # Budget check
             reservation = None
@@ -222,6 +237,15 @@ def _build_dry_run_plan(tc: ToolCall, engagement: Engagement) -> str:
                 f"max={tc.arguments.get('max_requests', 1)} "
                 f"expires={tc.arguments.get('expires_seconds', 300)}s | "
                 f"reason: {str(tc.arguments.get('reason', ''))[:200]} | "
+                f"engagement: {engagement.label}")
+    if tc.name == "mdns_browse":
+        return (f"mDNS browse: {tc.arguments.get('service_type', '_services._dns-sd._udp.local.')} | "
+                f"duration: {tc.arguments.get('duration_seconds', 3)}s | "
+                f"engagement: {engagement.label}")
+    if tc.name == "packet_capture":
+        return (f"PACKET CAPTURE: interface={tc.arguments.get('interface')} "
+                f"filter={tc.arguments.get('protocol', 'mdns')} "
+                f"duration: {tc.arguments.get('duration_seconds', 10)}s | "
                 f"engagement: {engagement.label}")
     if tc.name == "jwt_sign":
         claims = tc.arguments.get("claims")
